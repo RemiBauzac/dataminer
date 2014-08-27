@@ -12,11 +12,6 @@ local function _uniq(t, value)
   table.insert(t, value)
 end
 
-
-local function _force_data_type(value, type)
-
-end
-
 local module = {}
 
 local function _newdataset()
@@ -30,20 +25,21 @@ local function _newdataset()
   function dataset:find(key, value, strict) return dfind(self.data, key, value, strict) end
   function dataset:sort(func) return table.sort(self.data, func) end
   function dataset:distinct_value_count(key, value) return ddistinct_value_count(self.data, key, value) end
-  function dataset:distinct_value_func(dkey, fkey, func) return ddistinct_value_func(self.data, dkey, fkey, func) end
-  function dataset:distinct_func_value_func(dkey, dfunc, fkey, func) return ddistinct_func_value_func(self.data, dkey, dfunc, fkey, func) end
+  function dataset:distinct_value_func(dkey, fkey, func, share) return ddistinct_value_func(self.data, dkey, fkey, func, share) end
+  function dataset:distinct_func_value_func(dkey, dfunc, fkey, func, share) return ddistinct_func_value_func(self.data, dkey, dfunc, fkey, func, share) end
   function dataset:linewalk(func) return dlinewalk(self.data, func) end
   function dataset:keywalk(key, func) return dkeywalk(self.data, key, func) end
   function dataset:addkey(key, func) return daddkey(self.data, self.keys, key, func) end
+  function dataset:accumulation(key) return daccumulation(self.data, key) end
   function dataset:size() return #self.data end
-  function dataset:exportcsv(filename, separator) return dexportcsv(self.data, self.keys, filename, separator) end
+  function dataset:exportcsv(filename, separator, userkeys) return dexportcsv(self.data, self.keys, filename, separator, userkeys) end
   return dataset
 end
 
 --
 -- dataminer module functions
 --
-function module:new(source, sourcetype, sourcesep)
+function module.new(source, sourcetype, sourcesep)
   if type(source) == 'string' and type(sourcetype) == 'string' then
     if sourcetype == 'csv' then
       return _newcsv(source, sourcesep)
@@ -56,18 +52,33 @@ function module:new(source, sourcetype, sourcesep)
   end
 end
 
-function module:tonumber(number)
+function module.tonumber(number)
   if type(number) == 'string' then
     number = number:gsub(',','.')
   end
   return tonumber(number)
 end
 
-function module:round(number, dec)
-  fmt = '%.'..tostring(dec)..'f'
+function module.round(number, dec)
+  local d = dec or 2
+  fmt = '%.'..tostring(d)..'f'
   return tonumber(string.format(fmt, number)) 
 end
 
+function module.sumtable(t)
+  local s = 0
+  for _,v in ipairs(t) do
+    value = module.tonumber(v)
+    if value then
+      s = s + value
+    end
+  end
+  return s
+end
+
+--
+-- Data collection functions
+--
 function _newcsv(filename, awsep)
   local lines = {}
   local sep = awsep or ';'
@@ -121,10 +132,6 @@ function _newcsv(filename, awsep)
   return result
 end
 
-
---
--- Data collection functions
---
 function dinsert(data, keys, line, pos)
   for k,_ in pairs(line) do
     _uniq(keys, k)
@@ -205,13 +212,13 @@ function ddistinct_value_count(data, key)
   for k, v in pairs(result) do
     new:append({[key] = k, count = v, share = (v*100)/sum})
   end
-  new:append({[key] = 'Total', count = sum, share = 100})
   return new
 end
 
-function ddistinct_value_func(data, dkey, fkey, ffunc)
+function ddistinct_value_func(data, dkey, fkey, ffunc, share)
   local result = {}
   local func = ffunc or function(t) return #t end
+
   -- Set table
   for _,line in ipairs(data) do
     local value = line[dkey]
@@ -223,13 +230,24 @@ function ddistinct_value_func(data, dkey, fkey, ffunc)
   end
 
   new = _newdataset()
+  local total = 0
   for k, v in pairs(result) do
-    new:append({[dkey] = k, [fkey] = func(v)})
+    if k and v then
+      local value = func(v)
+      if share then total = total + value end
+      new:append({[dkey] = k, [fkey] = value})
+    end
+  end
+
+  if share then
+    for _,line in ipairs(new.data) do
+      line['share'] = (line[fkey]*100)/total
+    end
   end
   return new
 end
 
-function ddistinct_func_value_func(data, dkey, dffunc, fkey, ffunc)
+function ddistinct_func_value_func(data, dkey, dffunc, fkey, ffunc, share)
   local result = {}
   local func = ffunc or function(t) return #t end
   local dfunc = dffunc or function(t) return t end 
@@ -244,8 +262,17 @@ function ddistinct_func_value_func(data, dkey, dffunc, fkey, ffunc)
   end
 
   new = _newdataset()
+  local total = 0
   for k, v in pairs(result) do
-    new:append({[dkey] = k, [fkey] = func(v)})
+    local value = func(v)
+    if share then total = total + value end
+    new:append({[dkey] = k, [fkey] = value})
+  end
+
+  if share then
+    for _,line in ipairs(new.data) do
+      line['share'] = (line[fkey]*100)/total
+    end
   end
   return new
 end
@@ -257,7 +284,7 @@ function dlinewalk(data, func)
 end
 
 function dkeywalk(data, key, kfunc)
-  local func = kfunc or function(t) return #t end
+  local func = kfunc or function(t) return t end
   local values = {}
   for _,line in ipairs(data) do
     if line[key] then table.insert(values, line[key]) end
@@ -289,6 +316,14 @@ function dexportcsv(data, allkeys, filename, separator, userkeys)
     output:write(table.concat(vs, sep)..'\n')
   end
   output:close()
+end
+
+function daccumulation(data, key)
+  local cumul = 0
+  for _,line in ipairs(data) do
+    cumul = line[key] + cumul
+    line[key] = cumul
+  end
 end
 
 return module
