@@ -83,6 +83,9 @@ end
 
 local module = {}
 module.ctag = 1
+module.TIMESTAMP = TIMESTAMP
+module.TAG = TAG
+
 
 local function _newdataset()
   dataset = {}
@@ -104,7 +107,12 @@ local function _newdataset()
     return self
   end
   function dataset:distinct(key) return ddistinct(self.data, key) end
+  function dataset:distinctvalues(key) return ddistinctvalues(self.data, key) end
   function dataset:remove(param) dremove(self, param) return self end
+  function dataset:replace(key, value, replace)
+    dreplace(self.data, key, value, replace)
+    return self
+  end
   function dataset:lines() return ipairs(self.data) end
   function dataset:keywalk(key, func) return dkeywalk(self.data, key, func) end
   function dataset:print(limit) dprint(self.data, limit); return self end
@@ -316,6 +324,19 @@ function ddistinct(data, key)
   return result
 end
 
+function ddistinctvalues(data, key)
+  local rt = {}
+  local result = {}
+
+  for _,line in ipairs(data) do
+    if line[key] and not rt[line[key]] then
+      table.insert(result, line[key])
+      rt[line[key]] = 1
+    end
+  end
+  return result
+end
+
 function dremove(dataset, line)
   local tag = line[TAG]
   local id = _getline(dataset, tag)
@@ -323,6 +344,14 @@ function dremove(dataset, line)
     table.remove(dataset.data, id)
   end
   _updatetags(dataset)
+end
+
+function dreplace(data, key, value, replace)
+  for _,line in ipairs(data) do
+    if line[key] == value then
+      line[key] = replace
+    end
+  end
 end
 
 function dprint(data, limit)
@@ -333,7 +362,15 @@ function dprint(data, limit)
     str = ''
     for k,v2 in pairs(v) do
       if k:sub(1,1) ~= '@' then
-        io.write(string.format('%s=%s ', k, v2))
+        if type(v2) == 'table' then
+          io.write(string.format('%s=', k))
+          for _,v3 in ipairs(v2) do
+            io.write(string.format('%s,', v3))
+          end
+          io.write('\b ')
+        else
+          io.write(string.format('%s=%s ', k, v2))
+        end
       end
     end
     io.write('\n')
@@ -549,7 +586,16 @@ end
 
 function dexportcsv(data, allkeys, filename, separator, userkeys)
   local sep = separator or ';'
-  local ks = userkeys or allkeys
+  local ssep = ','
+  local ks = {} 
+
+  if sep == ',' then ssep = ';' end
+
+  for _, k in ipairs(userkeys or allkeys) do
+    if k:sub(1,1) ~= '@' then
+      table.insert(ks, k)
+    end
+  end
 
   output = io.open(filename, 'w')
   if not output then error('Cannot open file '..filename..' for writing') end
@@ -559,7 +605,11 @@ function dexportcsv(data, allkeys, filename, separator, userkeys)
     local vs = {}
     for _,k in ipairs(ks) do
       if k:sub(1,1) ~= '@' then
-        table.insert(vs, line[k] or '')
+        if type(line[k]) == 'table' then
+          table.insert(vs, table.concat(line[k], ssep))
+        else
+          table.insert(vs, line[k] or '')
+        end
       end
     end
     output:write(table.concat(vs, sep)..'\n')
