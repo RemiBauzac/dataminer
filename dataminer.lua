@@ -31,6 +31,8 @@ local TIMESP = {
 
 local DEFAULTSPAN = 'Day'
 
+local docstrings = setmetatable({}, {__mode = "kv"})
+
 --
 -- Helpers
 --
@@ -45,8 +47,19 @@ local function _uniq(t, value)
   table.insert(t, value)
 end
 
-local function _isstr(v)
-  return type(v) == 'string'
+local function _mandatory(value, name, awtype)
+  if value and awtype == 'all' then return end
+  if type(value) ~= awtype then
+    error(string.format('%s awaited type is %s insteadof %s',
+      name, awtype, type(value)))
+  end
+end
+
+local function _optional(value, name, awtype)
+  if value and type(value) ~= awtype  and awtype ~= 'all' then
+    error(string.format('%s awaited type is %s insteadof %s',
+      name, awtype, type(value)))
+  end
 end
 
 local function _gettimestamp(str, format)
@@ -86,62 +99,187 @@ module.ctag = 1
 module.TIMESTAMP = TIMESTAMP
 module.TAG = TAG
 
-
 local function _newdataset()
-  dataset = {}
+  -- create initial tables
+  local dataset = {}
   dataset.data = {}
   dataset.keys = {}
   dataset.tags = {}
+  dataset.docs = setmetatable({}, {__mode = "kv"})
+  dataset.shortdocs = setmetatable({}, {__mode = "kv"})
+
+  -- doc function to create inline doc
+  function dataset:doc(str)
+    return function(obj)
+      self.shortdocs[obj] = str:match('(.-)- .*')
+      self.docs[obj] = str
+      return obj
+    end
+  end
+
+  function dataset:help(obj)
+    if type(obj) == 'string' then obj = self[obj] end
+    if obj then
+      if self.docs[obj] then
+        print(self.docs[obj])
+      else
+        print('Documentation is unavailable for requested object')
+      end
+    else
+      for _,v in pairs(self.shortdocs) do print(v) end
+    end
+  end
+  dataset:doc[[help(f) - print help for function 'f' and return the data set
+  - f(function or string, optional): the function f which need help.
+      If nil, print all the function's help]](dataset.help)
+
   function dataset:append(line)
+    _mandatory(line, 'l', 'table')
     return dappend(self, line)
   end
+  dataset:doc[[append(l) - append a line 'l' to the data set and return the data set
+  - line(table, mandatory): key/value table to append]](dataset.append)
+
   function dataset:size() return #self.data end
+  dataset:doc[[size() - return the data set line number]](dataset.size)
+
   function dataset:first() return self.data[1] end
+  dataset:doc[[first() - return the data set first line
+  ]](dataset.first)
+
   function dataset:last() return self.data[#self.data] end
-  function dataset:addkey(key, func, extdata)
-    daddkey(self.data, self.keys, key, func, extdata)
+  dataset:doc[[last() - return the data set last line
+  ]](dataset.last)
+
+  function dataset:addkey(key, func)
+    _mandatory(key, 'k', 'string')
+    _optional(func, 'f', 'function')
+    daddkey(self.data, self.keys, key, func)
     return self
   end
+  dataset:doc[[addkey(k, f) - add a key named 'k' on each line and return the data set
+  - k(string, mandatory): name of the key to add
+  - f(function, optional): function to compute key, with the current line as parameter.
+      If nil, empty string is set for the key on all lines
+  ]](dataset.addkey)
+
   function dataset:delkey(key)
+    _mandatory(key, 'k', 'string')
     ddelkey(self.data, self.keys, key)
     return self
   end
-  function dataset:distinct(key) return ddistinct(self.data, key) end
-  function dataset:distinctvalues(key) return ddistinctvalues(self.data, key) end
-  function dataset:remove(param) dremove(self, param) return self end
+  dataset:doc[[delkey(k) - delete the key named 'k' on each line and return the data set
+  - k(string, mandatory): name of the key to delete
+  ]](dataset.delkey)
+
+  function dataset:distinct(key)
+    _mandatory(key, 'k', 'string')
+    return ddistinct(self.data, key)
+  end
+  dataset:doc[[distinct(k) - return a new dataset with all key 'k' distinct values and count
+  - k(string, mandatory): name of the key distinct values and count
+  ]](dataset.distinct)
+
+  function dataset:distinctvalues(key)
+    _mandatory(key, 'k', 'string')
+    return ddistinctvalues(self.data, key)
+  end
+  dataset:doc[[distinct(k) - return a list with all key 'k' distinct values
+  - k(string, mandatory): name of the key distinct values
+  ]](dataset.distinctvalues)
+
+  function dataset:remove(line)
+    _mandatory(line, 'l', 'table')
+    dremove(self, line)
+    return self
+  end
+  dataset:doc[[remove(l) - remove the 'l' line to the data set and return the data set
+  - l(table, mandatory): line to remove
+  ]](dataset.remove)
+
   function dataset:replace(key, value, replace)
+    _mandatory(key, 'k', 'string')
+    _mandatory(value, 'v', 'all')
+    _mandatory(replace, 'r', 'all')
     dreplace(self.data, key, value, replace)
     return self
   end
+  dataset:doc[[replace(k, v, r) - replace the value 'v' of the key 'k' by the new value 'r' on all data set lines and return the data set
+  - k(string, mandatory): key of value to replace 
+  - v(all, mandatory): value to replace 
+  - r(all, mandatory): new value
+  ]](dataset.remove)
+
   function dataset:lines() return ipairs(self.data) end
-  function dataset:keywalk(key, func) return dkeywalk(self.data, key, func) end
-  function dataset:print(limit) dprint(self.data, limit); return self end
+  dataset:doc[[lines() - return the iterator on data set lines
+  ]](dataset.lines)
+
+  function dataset:keywalk(key, func)
+    _mandatory(key, 'k', 'string')
+    _optional(func, 'f', 'function')
+    return dkeywalk(self.data, key, func)
+  end
+  dataset:doc[[keywalk(k, f) - walk through all key 'k' values and return the result of function 'f' applied on it
+  - k(string, mandatory): key to walk through
+  - f(function, optional): function to compute the values (as table).
+      If nil, the number of values is returned
+  ]](dataset.keywalk)
+
+  function dataset:print(limit)
+    _optional(limit, 'limit', 'number')
+    dprint(self.data, limit);
+    return self
+  end
+  dataset:doc[[print(limit) - print data set lines to the console, according to 'limit'
+  - limit(number, optional): limit the number of printed lines
+  ]](dataset.print)
+
   function dataset:printkeys() dprintkeys(self.keys); return self end
+  dataset:doc[[printkeys() - print all the keys of the dataset
+  ]](dataset.printkeys)
+
   function dataset:settimestamp(key, format)
+    _mandatory(key, 'k', 'string')
+    _mandatory(format, 'fmt', 'string')
     dsettimestamp(self, key, format)
     return self
   end
+  dataset:doc[[settimestamp(k, fmt) - use the key 'k' to set dataset timestamp on each lines, according to time format 'fmt'
+  - k(string, mandatory): key used as timestamp
+  - fmt(string, mandatory): time format
+  ]](dataset.settimestamp)
+
   function dataset:sort(param)
     dsort(self.data, param)
     _updatetags(self)
     return self
   end
-  function dataset:timesort(func)
+  dataset:doc[[sort(p) - sort data set with 'p'
+  - p(function or string, mandatory): sort parameter.
+      If p is a function, this function is used as compare function.
+      If p is a string, it is used as key to sort by values of this key (number awaited)
+  ]](dataset.sort)
+
+  function dataset:timesort()
     table.sort(self.data, function(a, b)
        return a[TIMESTAMP] and b[TIMESTAMP] and a[TIMESTAMP] < b[TIMESTAMP] end)
     _updatetags(self)
     return self
   end
+  dataset:doc[[timesort() - use timestamp (added with settimestamp) to sort in time order
+  ]](dataset.timesort)
+
   function dataset:top(pkey, fkey, func)
     return dtop(self.data, pkey, fkey, func)
   end
+
   function dataset:timechart(key, func, span)
     return dtimechart(self, key, func, span or DEFAULTSPAN)
   end
+
   function dataset:timegroup(span) return dtimegroup(self, span or DEFAULTSPAN) end
   function dataset:group(key) return dgroup(self, key) end
   function dataset:search(values, from, limit) return dsearch(self, values, from) end
-  function dataset:revsearch(values, from, limit) return drevsearch(self, values, from) end
   function dataset:select(func) return dselect(self.data, func) end
   function dataset:csv(filename, separator, userkeys)
     return dexportcsv(self.data, self.keys, filename, separator, userkeys)
@@ -272,7 +410,7 @@ function _newcsv(filename, awsep)
 end
 
 --
--- Data collection functions
+-- Data set functions
 --
 function dappend(dataset, line)
   for k,_ in pairs(line) do
@@ -286,11 +424,11 @@ function dappend(dataset, line)
   dataset.tags[line[TAG]] = #dataset.data
 end
 
-function daddkey(data, keys, key, func, extdata)
+function daddkey(data, keys, key, func)
   local afunc = func or function() return '' end
 
   for _,line in ipairs(data) do
-    if extdata then line[key] = func(line, extdata)
+    if extdata then line[key] = func(line)
     else line[key] = func(line)
     end
   end
@@ -541,32 +679,6 @@ function dsearch(dataset, values, from)
       end
       if found then
         result:append(data[i])
-        if limit and count == limit then break end
-      end
-    end
-  end
-  return result
-end
-
-function drevsearch(dataset, values, from, limit)
-  local data = dataset.data
-  local result = _newdataset()
-  local f, count = #data, 0
-  
-  if from and from[TAG] then
-    f = _getline(dataset, from[TAG])
-  end
-  if f <= #data then
-    for i = f,1,-1 do
-      local found = true
-      for k,v in pairs(values) do
-        if data[i][k] ~= v then
-          found = false;break
-        end
-      end
-      if found then
-        result:append(data[i])
-        count = count + 1
         if limit and count == limit then break end
       end
     end
