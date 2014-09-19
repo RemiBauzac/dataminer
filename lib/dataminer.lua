@@ -94,6 +94,56 @@ local function _updatetags(dataset)
   for k,v in ipairs(dataset.data) do dataset.tags[v[TAG]] = k end
 end
 
+--
+-- Metatables
+--
+local _line_meta = {
+  __eq = function(a,b) 
+    ret = true
+    for k,v in pairs(a) do
+      if b[k] ~= v then ret = false; break end
+    end
+    return ret
+  end,
+  __metatable = true,
+  __tostring = function(t)
+    local ret = ''
+    for k, v in pairs(t) do
+      if k:sub(1,1) ~= '@' then
+        if type(v) == 'table' then
+          ret = ret..string.format('%s=', k)
+          for _,v2 in ipairs(v) do
+            ret = ret..string.format('%s,', v2)
+          end
+          ret = ret..'\b '
+        else
+          ret = ret..string.format('%s=%s ', k, v)
+        end
+      end
+    end
+    return ret
+  end
+}
+
+local _dataset_meta = {
+  __tostring = function(t)
+    ret = ''
+    for _,v in ipairs(t.data) do
+      ret = ret..tostring(v)..'\n'
+    end
+    return ret
+  end,
+  __eq = function(a, b)
+    ret = true
+    if a:size() ~= b:size() then return false end
+    for idx = 1,a:size(),1 do
+      if a[idx] ~= b[idx] then ret = false; break end
+    end
+    return ret
+  end
+}
+
+
 local module = {}
 module.ctag = 1
 module.TIMESTAMP = TIMESTAMP
@@ -102,6 +152,7 @@ module.TAG = TAG
 local function _newdataset()
   -- create initial tables
   local dataset = {}
+  setmetatable(dataset, _dataset_meta)
   dataset.data = {}
   dataset.keys = {}
   dataset.tags = {}
@@ -330,13 +381,10 @@ end
 -- dataminer module functions
 --
 function module.new(source, sourcetype, sourcesep)
-  if type(source) == 'string' and type(sourcetype) == 'string' then
-    if sourcetype == 'csv' then
-      return _newcsv(source, sourcesep)
-    elseif sourcetype == 'lua' then
-    else
-      return _newdataset()
-    end
+  if sourcetype == 'csv' then
+    return _newcsv(source, sourcesep)
+  elseif sourcetype == 'lua' then
+    return _newlua(source)
   else
     return _newdataset()
   end
@@ -392,10 +440,19 @@ function module.distinctcount(t)
   return rt
 end
 
+function _newlua(t)
+  local result = _newdataset()
+
+  for _,v in ipairs(t) do
+    result:append(v)
+  end
+  return result
+end
+
 function _newcsv(filename, awsep)
   local lines = {}
   local sep = awsep or ';'
-  result = _newdataset()
+  local result = _newdataset()
 
   -- Put file lines in a table
   for line in io.lines(filename) do
@@ -459,6 +516,7 @@ function dappend(dataset, line)
     line[TAG] = module.ctag
     module.ctag = module.ctag + 1
   end
+  setmetatable(line, _line_meta)
   table.insert(dataset.data, line)
   dataset.tags[line[TAG]] = #dataset.data
 end
@@ -536,21 +594,7 @@ function dprint(data, limit)
   for _,v in ipairs(data) do
     count = count + 1
     if limit and count > limit then break end
-    str = ''
-    for k,v2 in pairs(v) do
-      if k:sub(1,1) ~= '@' then
-        if type(v2) == 'table' then
-          io.write(string.format('%s=', k))
-          for _,v3 in ipairs(v2) do
-            io.write(string.format('%s,', v3))
-          end
-          io.write('\b ')
-        else
-          io.write(string.format('%s=%s ', k, v2))
-        end
-      end
-    end
-    io.write('\n')
+    print(v)
    end
 end
 
