@@ -144,12 +144,10 @@ local function _newdataset()
   dataset:doc[[size() - return the data set line number]](dataset.size)
 
   function dataset:first() return self.data[1] end
-  dataset:doc[[first() - return the data set first line
-  ]](dataset.first)
+  dataset:doc[[first() - return the data set first line]](dataset.first)
 
   function dataset:last() return self.data[#self.data] end
-  dataset:doc[[last() - return the data set last line
-  ]](dataset.last)
+  dataset:doc[[last() - return the data set last line]](dataset.last)
 
   function dataset:addkey(key, func)
     _mandatory(key, 'k', 'string')
@@ -160,8 +158,7 @@ local function _newdataset()
   dataset:doc[[addkey(k, f) - add a key named 'k' on each line and return the data set
   - k(string, mandatory): name of the key to add
   - f(function, optional): function to compute key, with the current line as parameter.
-      If nil, empty string is set for the key on all lines
-  ]](dataset.addkey)
+      If nil, empty string is set for the key on all lines]](dataset.addkey)
 
   function dataset:delkey(key)
     _mandatory(key, 'k', 'string')
@@ -169,24 +166,21 @@ local function _newdataset()
     return self
   end
   dataset:doc[[delkey(k) - delete the key named 'k' on each line and return the data set
-  - k(string, mandatory): name of the key to delete
-  ]](dataset.delkey)
+  - k(string, mandatory): name of the key to delete]](dataset.delkey)
 
   function dataset:distinct(key)
     _mandatory(key, 'k', 'string')
     return ddistinct(self.data, key)
   end
   dataset:doc[[distinct(k) - return a new dataset with all key 'k' distinct values and count
-  - k(string, mandatory): name of the key distinct values and count
-  ]](dataset.distinct)
+  - k(string, mandatory): name of the key distinct values and count]](dataset.distinct)
 
   function dataset:distinctvalues(key)
     _mandatory(key, 'k', 'string')
     return ddistinctvalues(self.data, key)
   end
   dataset:doc[[distinct(k) - return a list with all key 'k' distinct values
-  - k(string, mandatory): name of the key distinct values
-  ]](dataset.distinctvalues)
+  - k(string, mandatory): name of the key distinct values]](dataset.distinctvalues)
 
   function dataset:remove(line)
     _mandatory(line, 'l', 'table')
@@ -194,8 +188,7 @@ local function _newdataset()
     return self
   end
   dataset:doc[[remove(l) - remove the 'l' line to the data set and return the data set
-  - l(table, mandatory): line to remove
-  ]](dataset.remove)
+  - l(table, mandatory): line to remove]](dataset.remove)
 
   function dataset:replace(key, value, replace)
     _mandatory(key, 'k', 'string')
@@ -207,12 +200,10 @@ local function _newdataset()
   dataset:doc[[replace(k, v, r) - replace the value 'v' of the key 'k' by the new value 'r' on all data set lines and return the data set
   - k(string, mandatory): key of value to replace 
   - v(all, mandatory): value to replace 
-  - r(all, mandatory): new value
-  ]](dataset.remove)
+  - r(all, mandatory): new value]](dataset.replace)
 
   function dataset:lines() return ipairs(self.data) end
-  dataset:doc[[lines() - return the iterator on data set lines
-  ]](dataset.lines)
+  dataset:doc[[lines() - return the iterator on data set lines]](dataset.lines)
 
   function dataset:keywalk(key, func)
     _mandatory(key, 'k', 'string')
@@ -222,8 +213,7 @@ local function _newdataset()
   dataset:doc[[keywalk(k, f) - walk through all key 'k' values and return the result of function 'f' applied on it
   - k(string, mandatory): key to walk through
   - f(function, optional): function to compute the values (as table).
-      If nil, the number of values is returned
-  ]](dataset.keywalk)
+      If nil, the number of values is returned]](dataset.keywalk)
 
   function dataset:print(limit)
     _optional(limit, 'limit', 'number')
@@ -231,12 +221,10 @@ local function _newdataset()
     return self
   end
   dataset:doc[[print(limit) - print data set lines to the console, according to 'limit'
-  - limit(number, optional): limit the number of printed lines
-  ]](dataset.print)
+  - limit(number, optional): limit the number of printed lines]](dataset.print)
 
   function dataset:printkeys() dprintkeys(self.keys); return self end
-  dataset:doc[[printkeys() - print all the keys of the dataset
-  ]](dataset.printkeys)
+  dataset:doc[[printkeys() - print all the keys of the dataset]](dataset.printkeys)
 
   function dataset:settimestamp(key, format)
     _mandatory(key, 'k', 'string')
@@ -244,21 +232,19 @@ local function _newdataset()
     dsettimestamp(self, key, format)
     return self
   end
-  dataset:doc[[settimestamp(k, fmt) - use the key 'k' to set dataset timestamp on each lines, according to time format 'fmt'
+  dataset:doc[[settimestamp(k, fmt) - use the key 'k' to set dataset timestamp on each lines, according to time format 'fmt' and return the data set
   - k(string, mandatory): key used as timestamp
-  - fmt(string, mandatory): time format
-  ]](dataset.settimestamp)
+  - fmt(string, mandatory): time format]](dataset.settimestamp)
 
   function dataset:sort(param)
     dsort(self.data, param)
     _updatetags(self)
     return self
   end
-  dataset:doc[[sort(p) - sort data set with 'p'
+  dataset:doc[[sort(p) - sort data set with 'p' and return the data set
   - p(function or string, mandatory): sort parameter.
       If p is a function, this function is used as compare function.
-      If p is a string, it is used as key to sort by values of this key (number awaited)
-  ]](dataset.sort)
+      If p is a string, it is used as key to sort by values of this key (number awaited)]](dataset.sort)
 
   function dataset:timesort()
     table.sort(self.data, function(a, b)
@@ -266,24 +252,77 @@ local function _newdataset()
     _updatetags(self)
     return self
   end
-  dataset:doc[[timesort() - use timestamp (added with settimestamp) to sort in time order
-  ]](dataset.timesort)
+  dataset:doc[[timesort() - use timestamp (added with settimestamp) to sort in time order and return data set]](dataset.timesort)
 
   function dataset:top(pkey, fkey, func)
+    _mandatory(pkey, 'k', 'string')
+    _mandatory(fkey, 'ck', 'string')
+    _optional(func, 'f', 'function')
     return dtop(self.data, pkey, fkey, func)
   end
+  dataset:doc[[top(k, ck, f) - return a new dataset with top of key 'k' values, according to function 'f' applied to key 'ck'
+  - k(string, mandatory): top key
+  - ck(string, mandatory): key used to compute the top
+  - f(function, optional): function used to compute the top
+      If nil, top count the number of distinct values of key 'k']](dataset.top)
 
   function dataset:timechart(key, func, span)
+    _mandatory(key, 'k', 'string')
+    _optional(func, 'f', 'function')
+    _optional(span, 's', 'string')
     return dtimechart(self, key, func, span or DEFAULTSPAN)
   end
+  dataset:doc[[timechart(k, f, s) - return a new data set with computed key 'k' values with function 'f' over the time
+  - k(string, mandatory): keys of values to compute
+  - f(function,optional): function used to compute values
+      If nil, timechart count distinct values of key 'k'
+  - s(string, optional): span of the timechart.
+      Available values are : 'Year', 'Month', 'Day', 'Hour', 'Minute', 'Second'
+      If nil, 'Day' is used]](dataset.timechart)
 
-  function dataset:timegroup(span) return dtimegroup(self, span or DEFAULTSPAN) end
-  function dataset:group(key) return dgroup(self, key) end
-  function dataset:search(values, from, limit) return dsearch(self, values, from) end
-  function dataset:select(func) return dselect(self.data, func) end
+  function dataset:timegroup(span)
+    _optional(span, 's', 'string')
+    return dtimegroup(self, span or DEFAULTSPAN)
+  end
+  dataset:doc[[timegroup(s) - return a table of data set, grouped by 's'
+  - s(string, optional): span of the timechart.
+      Available values are : 'Year', 'Month', 'Day', 'Hour', 'Minute', 'Second'
+      If nil, 'Day' is used]](dataset.timegroup)
+
+  function dataset:group(key)
+    _mandatory(key, 'k', 'string')
+    return dgroup(self, key)
+  end
+  dataset:doc[[timegroup(k) - return a table of data set, grouped by distinct values of key 'k' 
+  - k(string, mandatory): key for the distinct value to group]](dataset.group)
+
+  function dataset:search(values)
+    _mandatory(values, 'v', 'table')
+    return dsearch(self, values)
+  end
+  dataset:doc[[search(v) - return a dataset with lines matching values 'v' 
+  - v(table, mandatory): key/value table to match dataset key/value]](dataset.search)
+
+  function dataset:select(func)
+    _optional(func, 'f', 'function')
+    return dselect(self.data, func)
+  end
+  dataset:doc[[select(f) - return a dataset with selected lines of function 'f'
+  - f(function, optional): function used to select a line. Must return true if the line is selcted 
+      If nil, all lines are selected]](dataset.select)
+
   function dataset:csv(filename, separator, userkeys)
+    _mandatory(filename, 'f', 'string')
+    _optional(separator, 's', 'string')
+    _optional(userkeys, 'k', 'table')
     return dexportcsv(self.data, self.keys, filename, separator, userkeys)
   end
+  dataset:doc[[csv(f, s, k) - export data set in csv file, using 's' as separator, and return data set
+  - f(string, mandatory): file name to export csv
+  - s(string, optional): csv separator. ';' by default
+  - k(table, optional): key table to force only these on csv
+  ]](dataset.csv)
+
   return dataset
 end
 
@@ -661,16 +700,12 @@ function dgroup(dataset, key)
   return rt
 end
 
-function dsearch(dataset, values, from)
+function dsearch(dataset, values)
   local data = dataset.data
   local result = _newdataset()
   local f, count = 1,0
   
-  if from and from[TAG] then
-    f = _getline(dataset, from[TAG])
-  end
-  if f < #data then
-    for i = f,#data,1 do
+  for i = f,#data,1 do
       local found = true
       for k,v in pairs(values) do
         if data[i][k] ~= v then
@@ -681,7 +716,6 @@ function dsearch(dataset, values, from)
         result:append(data[i])
         if limit and count == limit then break end
       end
-    end
   end
   return result
 end
