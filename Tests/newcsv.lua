@@ -1,15 +1,14 @@
 miner = require('dataminer')
+require('sample')
 
 function Test_load()
-  csv = miner.new('sample.csv', 'csv', ',')
-  sample = require('sample')
-  if csv ~= sample then error('Error in CSV loading') end
+  local csv = miner.new('sample.csv', 'csv', ',')
+  if csv ~= sample_miner then error('Error in CSV loading') end
 end
 
 function Test_modified_load()
-  csv = miner.new('sample.csv', 'csv', ',')
-  sample = require('sample')
-  l = csv:first()
+  local csv = miner.new('sample.csv', 'csv', ',')
+  local l = csv:first()
   csv:remove(l)
-  if csv == sample then error('Error in CSV loading') end
+  if csv == sample_miner then error('Error in CSV loading') end
 end

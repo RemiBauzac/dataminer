@@ -101,11 +101,10 @@ local _line_meta = {
   __eq = function(a,b) 
     ret = true
     for k,v in pairs(a) do
-      if b[k] ~= v then ret = false; break end
+      if k:sub(1,1) ~= '@' and b[k] ~= v then ret = false; break end
     end
     return ret
   end,
-  __metatable = true,
   __tostring = function(t)
     local ret = ''
     for k, v in pairs(t) do
