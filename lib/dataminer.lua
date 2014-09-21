@@ -136,7 +136,7 @@ local _dataset_meta = {
     ret = true
     if a:size() ~= b:size() then return false end
     for idx = 1,a:size(),1 do
-      if a[idx] ~= b[idx] then ret = false; break end
+      if a.data[idx] ~= b.data[idx] then ret = false; break end
     end
     return ret
   end
