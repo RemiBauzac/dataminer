@@ -36,4 +36,18 @@ function Test_addKey()
   end
 end
 
+function Test_addBadKey()
+  local csv = miner.new('sample.csv', 'csv', ',')
+  _,err = pcall(csv.addkey, csv, 10)
+  if not err:find('k awaited type is string insteadof number') then
+    error('Error on adding bad key error handling ('..err..')')
+  end
+end
 
+function Test_addKeyBadFunction()
+  local csv = miner.new('sample.csv', 'csv', ',')
+  _,err = pcall(csv.addkey, csv, newKey, newKey)
+  if not err:find('f awaited type is function insteadof string') then
+    error('Error on adding key error handling ('..err..')')
+  end
+end
