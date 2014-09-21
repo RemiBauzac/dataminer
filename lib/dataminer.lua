@@ -524,9 +524,7 @@ function daddkey(data, keys, key, func)
   local afunc = func or function() return '' end
 
   for _,line in ipairs(data) do
-    if extdata then line[key] = func(line)
-    else line[key] = func(line)
-    end
+    line[key] = afunc(line)
   end
   table.insert(keys, key)
 end
