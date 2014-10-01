@@ -134,14 +134,24 @@ local _dataset_meta = {
   end,
   __eq = function(a, b)
     ret = true
-    if a:size() ~= b:size() then return false end
-    for idx = 1,a:size(),1 do
+    if #a.data ~= #b.data then return false end
+    for idx = 1,#a.data,1 do
       if a.data[idx] ~= b.data[idx] then ret = false; break end
     end
     return ret
-  end
+  end,
+	__len = function(t) return #t.data end
 }
 
+local _group_meta = {
+	__tostring = function(t)
+		ret = ''
+		for k,v in pairs(t) do
+			ret = ret..string.format('%s: %d lines\n',k, v:size())
+		end
+		return ret
+	end
+}
 
 local module = {}
 module.ctag = 1
@@ -189,9 +199,6 @@ local function _newdataset()
   end
   dataset:doc[[append(l) - append a line 'l' to the data set and return the data set
   - line(table, mandatory): key/value table to append]](dataset.append)
-
-  function dataset:size() return #self.data end
-  dataset:doc[[size() - return the data set line number]](dataset.size)
 
   function dataset:first() return self.data[1] end
   dataset:doc[[first() - return the data set first line]](dataset.first)
@@ -343,7 +350,7 @@ local function _newdataset()
     _mandatory(key, 'k', 'string')
     return dgroup(self, key)
   end
-  dataset:doc[[timegroup(k) - return a table of data set, grouped by distinct values of key 'k' 
+  dataset:doc[[group(k) - return a table of data set, grouped by distinct values of key 'k' 
   - k(string, mandatory): key for the distinct value to group]](dataset.group)
 
   function dataset:search(values)
@@ -695,7 +702,7 @@ end
 
 function dtimegroup(dataset, span)
   local rt = {}
-
+	setmetatable(rt, _group_meta)
   -- collecting
   for _, line in ipairs(dataset.data) do
     local sp = _getspan(line, span)
@@ -719,6 +726,7 @@ end
 
 function dgroup(dataset, key)
   local rt = {}
+	setmetatable(rt, _group_meta)
   if not key then return rt end
 
   -- collecting
