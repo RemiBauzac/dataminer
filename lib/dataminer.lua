@@ -147,7 +147,7 @@ local _group_meta = {
 	__tostring = function(t)
 		ret = ''
 		for k,v in pairs(t) do
-			ret = ret..string.format('%s: %d lines\n',k, v:size())
+			ret = ret..string.format('%s: %d lines\n',k, #v)
 		end
 		return ret
 	end
