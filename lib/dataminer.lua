@@ -690,7 +690,7 @@ function dtimechart(dataset, key, group, func, span)
     for k1,v1 in pairs(rt) do
       newline = {[span]=k1}
       for k2,v2 in pairs(v1) do
-        newline[string.format('%s(%s)',k2, key)] = f(v2)
+        newline[string.format('%s(%s)',key, k2)] = f(v2)
       end
       result:append(newline)
     end
