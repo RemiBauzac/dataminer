@@ -140,17 +140,17 @@ local _dataset_meta = {
     end
     return ret
   end,
-	__len = function(t) return #t.data end
+  __len = function(t) return #t.data end
 }
 
 local _group_meta = {
-	__tostring = function(t)
-		ret = ''
-		for k,v in pairs(t) do
-			ret = ret..string.format('%s: %d lines\n',k, #v)
-		end
-		return ret
-	end
+  __tostring = function(t)
+    ret = ''
+    for k,v in pairs(t) do
+      ret = ret..string.format('%s: %d lines\n',k, #v)
+    end
+    return ret
+  end
 }
 
 local module = {}
@@ -323,14 +323,16 @@ local function _newdataset()
   - f(function, optional): function used to compute the top
       If nil, top count the number of distinct values of key 'k']](dataset.top)
 
-  function dataset:timechart(key, func, span)
+  function dataset:timechart(key, group, func, span)
     _mandatory(key, 'k', 'string')
+    _optional(group, 'g', 'string')
     _optional(func, 'f', 'function')
     _optional(span, 's', 'string')
-    return dtimechart(self, key, func, span or DEFAULTSPAN)
+    return dtimechart(self, key, group, func, span or DEFAULTSPAN)
   end
-  dataset:doc[[timechart(k, f, s) - return a new data set with computed key 'k' values with function 'f' over the time
-  - k(string, mandatory): keys of values to compute
+  dataset:doc[[timechart(k, g, f, s) - return a new data set with computed key 'k' values with function 'f' over the time grouped by key 'g'
+  - k(string, mandatory): key of values to compute
+  - g(string, optional): key to group values
   - f(function,optional): function used to compute values
       If nil, timechart count distinct values of key 'k'
   - s(string, optional): span of the timechart.
@@ -436,14 +438,6 @@ end
 
 function module.count(t)
   return #t
-end
-
-function module.distinctcount(t)
-  local rt = {}
-  for _,v in ipairs(t) do
-    if rt[v] then rt[v] = rt[v] + 1 else rt[v] = 1 end
-  end
-  return rt
 end
 
 function _newlua(t)
@@ -664,7 +658,7 @@ function dtop(data, pkey, fkey, func)
   return result
 end
 
-function dtimechart(dataset, key, func, span)
+function dtimechart(dataset, key, group, func, span)
   local rt = {}
   local f = func or module.count
   local fname = string.format('f(%s)', key)
@@ -673,24 +667,36 @@ function dtimechart(dataset, key, func, span)
   for _, line in ipairs(dataset.data) do
     local sp = _getspan(line, span)
     if rt[sp] then
-      table.insert(rt[sp], line[key])
+      if group and rt[sp][line[group]] then
+        table.insert(rt[sp][line[group]], line[key])
+      elseif group then
+        rt[sp][line[group]] = {line[key]}
+      else
+        table.insert(rt[sp], line[key])
+      end
     else
-      rt[sp] = {line[key]}
+      if group then
+				local idx = line[group] or 'nil'
+        rt[sp] = {[idx]={line[key]}}
+       else 
+        rt[sp] = {line[key]}
+      end
     end 
   end
 
   -- processing
   local result = _newdataset()
-  for k,v in pairs(rt) do
-    local fr = f(v)
-    if type(fr) == 'table' then
-      rl = {[span]=k}
-      for frk, frv in pairs(fr) do
-        rl[frk] = frv
+  if group then
+    for k1,v1 in pairs(rt) do
+      newline = {[span]=k1}
+      for k2,v2 in pairs(v1) do
+        newline[string.format('%s(%s)',k2, key)] = f(v2)
       end
-      result:append(rl)
-    else
-      result:append({[span]=k, [fname]= fr})
+      result:append(newline)
+    end
+  else
+    for k,v in pairs(rt) do
+       result:append({[span]=k, [string.format('f(%s)', key)]= f(v)})
     end
   end
 
@@ -702,7 +708,7 @@ end
 
 function dtimegroup(dataset, span)
   local rt = {}
-	setmetatable(rt, _group_meta)
+  setmetatable(rt, _group_meta)
   -- collecting
   for _, line in ipairs(dataset.data) do
     local sp = _getspan(line, span)
@@ -726,7 +732,7 @@ end
 
 function dgroup(dataset, key)
   local rt = {}
-	setmetatable(rt, _group_meta)
+  setmetatable(rt, _group_meta)
   if not key then return rt end
 
   -- collecting
