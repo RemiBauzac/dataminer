@@ -131,11 +131,25 @@ local _dataset_meta = {
     end
     return ret
   end,
-  __len = function(t) return #t.data end
+  __len = function(t) return #t.data end,
+	__index = function(t, k)
+		if type(k) == 'number' then
+			return t.data[k]
+		end
+		if type(k) == 'string' and t.groupkey then
+			for _,v in ipairs(t.data) do
+				if v[t.groupkey] == k then
+					return v[GROUPSTAMP]
+				end
+			end
+		end
+		return nil
+	end
 }
 
 local module = {}
 module.TIMESTAMP = TIMESTAMP
+module.GROUPSTAMP = GROUPSTAMP
 
 local function _newdataset()
   -- create initial tables
