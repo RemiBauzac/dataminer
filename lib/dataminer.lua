@@ -2,7 +2,7 @@
 -- Constants
 --
 local TIMESTAMP='@timestamp'
-local TAG='@tag'
+local GROUPSTAMP='@group'
 
 local SPAN = {
   ['Year'] = '%Y',
@@ -85,15 +85,6 @@ local function _getspan(line, span)
   return os.date(SPAN[DEFAULTSPAN], line[TIMESTAMP])
 end
 
-local function _getline(dataset, tag)
-  return dataset.tags[tag]
-end
-
-local function _updatetags(dataset)
-  dataset.tags = {} 
-  for k,v in ipairs(dataset.data) do dataset.tags[v[TAG]] = k end
-end
-
 --
 -- Metatables
 --
@@ -143,20 +134,8 @@ local _dataset_meta = {
   __len = function(t) return #t.data end
 }
 
-local _group_meta = {
-  __tostring = function(t)
-    ret = ''
-    for k,v in pairs(t) do
-      ret = ret..string.format('%s: %d lines\n',k, #v)
-    end
-    return ret
-  end
-}
-
 local module = {}
-module.ctag = 1
 module.TIMESTAMP = TIMESTAMP
-module.TAG = TAG
 
 local function _newdataset()
   -- create initial tables
@@ -164,7 +143,6 @@ local function _newdataset()
   setmetatable(dataset, _dataset_meta)
   dataset.data = {}
   dataset.keys = {}
-  dataset.tags = {}
   dataset.docs = setmetatable({}, {__mode = "kv"})
   dataset.shortdocs = setmetatable({}, {__mode = "kv"})
 
@@ -239,14 +217,6 @@ local function _newdataset()
   dataset:doc[[distinct(k) - return a list with all key 'k' distinct values
   - k(string, mandatory): name of the key distinct values]](dataset.distinctvalues)
 
-  function dataset:remove(line)
-    _mandatory(line, 'l', 'table')
-    dremove(self, line)
-    return self
-  end
-  dataset:doc[[remove(l) - remove the 'l' line to the data set and return the data set
-  - l(table, mandatory): line to remove]](dataset.remove)
-
   function dataset:replace(key, value, replace)
     _mandatory(key, 'k', 'string')
     _mandatory(value, 'v', 'all')
@@ -272,6 +242,13 @@ local function _newdataset()
   - f(function, optional): function to compute the values (as table).
       If nil, the number of values is returned]](dataset.keywalk)
 
+	function dataset:groupwalk(func)
+		_mandatory(func, 'f', 'function')
+		return dgroupwalk(self, func)
+	end
+  dataset:doc[[groupwalk(k, f) - walk through groups of a grouped dataset and return a new dataset with result of function 'f' applied of all lines of this group
+  - f(function, mandatory): function to compute the values (as group keys and dataset) ]] (dataset.groupwalk)
+
   function dataset:print(limit)
     _optional(limit, 'limit', 'number')
     dprint(self.data, limit);
@@ -295,7 +272,6 @@ local function _newdataset()
 
   function dataset:sort(param)
     dsort(self.data, param)
-    _updatetags(self)
     return self
   end
   dataset:doc[[sort(p) - sort data set with 'p' and return the data set
@@ -306,7 +282,6 @@ local function _newdataset()
   function dataset:timesort()
     table.sort(self.data, function(a, b)
        return a[TIMESTAMP] and b[TIMESTAMP] and a[TIMESTAMP] < b[TIMESTAMP] end)
-    _updatetags(self)
     return self
   end
   dataset:doc[[timesort() - use timestamp (added with settimestamp) to sort in time order and return data set]](dataset.timesort)
@@ -512,13 +487,8 @@ function dappend(dataset, line)
   for k,_ in pairs(line) do
     _uniq(dataset.keys, k)
   end
-  if not line[TAG] then
-    line[TAG] = module.ctag
-    module.ctag = module.ctag + 1
-  end
   setmetatable(line, _line_meta)
   table.insert(dataset.data, line)
-  dataset.tags[line[TAG]] = #dataset.data
 end
 
 function daddkey(data, keys, key, func)
@@ -570,15 +540,6 @@ function ddistinctvalues(data, key)
   return result
 end
 
-function dremove(dataset, line)
-  local tag = line[TAG]
-  local id = _getline(dataset, tag)
-  if id and id > 0 then
-    table.remove(dataset.data, id)
-  end
-  _updatetags(dataset)
-end
-
 function dreplace(data, key, value, replace)
   for _,line in ipairs(data) do
     if line[key] == value then
@@ -605,6 +566,21 @@ function dkeywalk(data, key, func)
   end
 
   return f(rt)
+end
+
+function dgroupwalk(dataset, func)
+	local rt = _newdataset()
+	local key = dataset.groupkey
+	if not key then return rt end
+	
+	for _,v in dataset:lines() do
+		rt:append({[key] = v[key], ['f(group)'] = func(v[key], v[GROUPSTAMP])})
+	end
+
+	if dataset.timefield and dataset.timeformat then
+		rt:settimestamp(dataset.timefield, dataset.timeformat)
+	end
+	return rt
 end
 
 function dprintkeys(keys)
@@ -654,7 +630,6 @@ function dtop(data, pkey, fkey, func)
 
   -- sorting
   result:sort(function(a, b) return a[fname] and b[fname] and a[fname] > b[fname] end)
-  _updatetags(result)
   return result
 end
 
@@ -702,55 +677,74 @@ function dtimechart(dataset, key, group, func, span)
 
   -- timestamping and sorting
   result:settimestamp(span, SPAN[span]) 
-  _updatetags(result)
   return result
 end
 
 function dtimegroup(dataset, span)
-  local rt = {}
-  setmetatable(rt, _group_meta)
+  local rt = _newdataset()
+	local collect = {}
+	local key = '#'..span
+
   -- collecting
-  for _, line in ipairs(dataset.data) do
-    local sp = _getspan(line, span)
-    line['#'..span] = sp
-    if rt[sp] then
-      rt[sp]:append(line)
-    else
-      rt[sp] = _newdataset()
-      rt[sp]:append(line)
-    end
+  for _, line in dataset:lines() do
+		local sp = _getspan(line, span)
+    if sp and collect[sp] then
+      collect[sp]:append(line)
+    elseif sp then
+      collect[sp] = _newdataset()
+      collect[sp]:append(line)
+    end 
   end
+
+	-- create dataset
+	for k,v in pairs(collect) do
+		rt:append({[key] = k, [GROUPSTAMP] = v})
+	end
 
   -- timestamping and sorting
-  for _,g in pairs(rt) do
-    g:settimestamp(dataset.timefield, dataset.timeformat)
-    _updatetags(g)
-  end
+	if dataset.timefield and dataset.timeformat then
+		for _,gl in rt:lines() do
+			local g = gl[GROUPSTAMP]
+    	g:settimestamp(dataset.timefield, dataset.timeformat)
+  	end
+	end
 
+	rt:settimestamp(key, SPAN[span])
+	rt.groupkey = key 
   return rt
 end
 
 function dgroup(dataset, key)
-  local rt = {}
-  setmetatable(rt, _group_meta)
+  local rt = _newdataset()
+	local collect = {}
   if not key then return rt end
 
   -- collecting
-  for _, line in ipairs(dataset.data) do
+  for _, line in dataset:lines() do
     local sp = line[key]
-    if sp and rt[sp] then
-      rt[sp]:append(line)
+    if sp and collect[sp] then
+      collect[sp]:append(line)
     elseif sp then
-      rt[sp] = _newdataset()
-      rt[sp]:append(line)
+      collect[sp] = _newdataset()
+      collect[sp]:append(line)
     end 
   end
 
+	-- create dataset
+	for k,v in pairs(collect) do
+		rt:append({[key] = k, [GROUPSTAMP] = v})
+	end
+
   -- timestamping and sorting
-  for _,g in pairs(rt) do
-    g:settimestamp(dataset.timefield, dataset.timeformat)
-    _updatetags(g)
-  end
+	if dataset.timefield and dataset.timeformat then
+		for _,gl in rt:lines() do
+			local g = gl[GROUPSTAMP]
+    	g:settimestamp(dataset.timefield, dataset.timeformat)
+  	end
+	end
+
+	-- set groupkey
+	rt.groupkey = key
 
   return rt
 end
