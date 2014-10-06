@@ -3,6 +3,7 @@
 --
 local TIMESTAMP='@timestamp'
 local GROUPSTAMP='@group'
+local GROUPFUNCTION='f(group)'
 
 local SPAN = {
   ['Year'] = '%Y',
@@ -144,12 +145,31 @@ local _dataset_meta = {
 			end
 		end
 		return nil
+	end,
+	__add = function(t, l)
+  	for k,_ in pairs(l) do
+    	_uniq(t.keys, k)
+  	end
+  	setmetatable(l, _line_meta)
+  	table.insert(t.data, l)
+		return t
+	end,
+	__concat = function(d1, d2)
+		local r = _newdataset()
+		for _,l in d1:lines() do
+			r = r + l
+		end
+		for _,l in d2:lines() do
+			r = r + l
+		end
+		return r
 	end
 }
 
 local module = {}
 module.TIMESTAMP = TIMESTAMP
 module.GROUPSTAMP = GROUPSTAMP
+module.GROUPFUNCTION = GROUPFUNCTION
 
 local function _newdataset()
   -- create initial tables
@@ -185,13 +205,6 @@ local function _newdataset()
   - f(function or string, optional): the function f which need help.
       If nil, print all the function's help]](dataset.help)
 
-  function dataset:append(line)
-    _mandatory(line, 'l', 'table')
-    return dappend(self, line)
-  end
-  dataset:doc[[append(l) - append a line 'l' to the data set and return the data set
-  - line(table, mandatory): key/value table to append]](dataset.append)
-
   function dataset:first() return self.data[1] end
   dataset:doc[[first() - return the data set first line]](dataset.first)
 
@@ -208,6 +221,17 @@ local function _newdataset()
   - k(string, mandatory): name of the key to add
   - f(function, optional): function to compute key, with the current line as parameter.
       If nil, empty string is set for the key on all lines]](dataset.addkey)
+
+  function dataset:groupaddkey(key, func)
+    _mandatory(key, 'k', 'string')
+    _optional(func, 'f', 'function')
+    dgroupaddkey(self, key, func)
+    return self
+  end
+  dataset:doc[[groupaddkey(k, f) - add a key named 'k' on each group and return the group data set
+  - k(string, mandatory): name of the key to add
+  - f(function, optional): function to compute key, with the current group lines as parameter.
+      If nil, empty string is set for the key on all lines]](dataset.groupaddkey)
 
   function dataset:delkey(key)
     _mandatory(key, 'k', 'string')
@@ -245,6 +269,26 @@ local function _newdataset()
 
   function dataset:lines() return ipairs(self.data) end
   dataset:doc[[lines() - return the iterator on data set lines]](dataset.lines)
+
+  function dataset:glines()
+		local group = {}
+		if not self.groupkey then return pairs(group) end
+		for _, l in self:lines() do
+			group[l[self.groupkey]] = l[GROUPSTAMP]
+		end
+		return pairs(group)
+	end
+  dataset:doc[[glines() - return the iterator on group lines]](dataset.glines)
+
+	function dataset:grouptable()
+		local group = {}
+		if not self.groupkey then return pairs(group) end
+		for _, l in self:lines() do
+			group[l[self.groupkey]] = l[GROUPSTAMP]
+		end
+		return group
+	end
+  dataset:doc[[glines() - return group as a table]](dataset.grouptable)
 
   function dataset:keywalk(key, func)
     _mandatory(key, 'k', 'string')
@@ -433,7 +477,7 @@ function _newlua(t)
   local result = _newdataset()
 
   for _,v in ipairs(t) do
-    result:append(v)
+		result = result + v
   end
   return result
 end
@@ -489,7 +533,7 @@ function _newcsv(filename, awsep)
         idx = idx + 1
       end
     end
-    result:append(nl)
+    result = result + nl
   end
   return result
 end
@@ -536,7 +580,7 @@ function ddistinct(data, key)
 
   local result = _newdataset()
   for k, v in pairs(rt) do
-    result:append({[key]= k, ['count']=v})
+    result = result + {[key]= k, ['count']=v}
   end
   return result
 end
@@ -588,13 +632,23 @@ function dgroupwalk(dataset, func)
 	if not key then return rt end
 	
 	for _,v in dataset:lines() do
-		rt:append({[key] = v[key], ['f(group)'] = func(v[key], v[GROUPSTAMP])})
+		rt = rt + {[key] = v[key], [GROUPFUNCTION] = func(v[key], v[GROUPSTAMP])}
 	end
 
 	if dataset.timefield and dataset.timeformat then
 		rt:settimestamp(dataset.timefield, dataset.timeformat)
 	end
 	return rt
+end
+
+function dgroupaddkey(dataset, key, func)
+	local gkey = dataset.groupkey
+	if not gkey then return dataset end
+
+	for _,v in dataset:lines() do
+		v[key] = func(v[GROUPSTAMP])
+	end
+	table.insert(dataset.keys, key)
 end
 
 function dprintkeys(keys)
@@ -639,7 +693,7 @@ function dtop(data, pkey, fkey, func)
   -- processing
   local result = _newdataset()
   for k,v in pairs(rt) do
-    result:append({[pkey]=k, [fname]= f(v)})
+    result = result + {[pkey]=k, [fname]= f(v)}
   end
 
   -- sorting
@@ -681,11 +735,11 @@ function dtimechart(dataset, key, group, func, span)
       for k2,v2 in pairs(v1) do
         newline[string.format('%s(%s)',key, k2)] = f(v2)
       end
-      result:append(newline)
+      result = result + newline
     end
   else
     for k,v in pairs(rt) do
-       result:append({[span]=k, [string.format('f(%s)', key)]= f(v)})
+       result = result + {[span]=k, [string.format('f(%s)', key)]= f(v)}
     end
   end
 
@@ -703,16 +757,16 @@ function dtimegroup(dataset, span)
   for _, line in dataset:lines() do
 		local sp = _getspan(line, span)
     if sp and collect[sp] then
-      collect[sp]:append(line)
+      collect[sp] = collect[sp] + line
     elseif sp then
       collect[sp] = _newdataset()
-      collect[sp]:append(line)
+      collect[sp] = collect[sp] + line
     end 
   end
 
 	-- create dataset
 	for k,v in pairs(collect) do
-		rt:append({[key] = k, [GROUPSTAMP] = v})
+		rt = rt + {[key] = k, [GROUPSTAMP] = v}
 	end
 
   -- timestamping and sorting
@@ -737,16 +791,16 @@ function dgroup(dataset, key)
   for _, line in dataset:lines() do
     local sp = line[key]
     if sp and collect[sp] then
-      collect[sp]:append(line)
+      collect[sp] = collect[sp] + line
     elseif sp then
       collect[sp] = _newdataset()
-      collect[sp]:append(line)
+      collect[sp] = collect[sp] + line
     end 
   end
 
 	-- create dataset
 	for k,v in pairs(collect) do
-		rt:append({[key] = k, [GROUPSTAMP] = v})
+		rt = rt + {[key] = k, [GROUPSTAMP] = v}
 	end
 
   -- timestamping and sorting
@@ -776,7 +830,7 @@ function dsearch(dataset, values)
         end
       end
       if found then
-        result:append(data[i])
+        result = result + data[i]
         if limit and count == limit then break end
       end
   end
@@ -788,7 +842,7 @@ function dselect(data, func)
   local result = _newdataset()
 
   for _,line in ipairs(data) do
-    if f(line) then result:append(line) end
+    if f(line) then result = result + line end
   end
   return result
 end
