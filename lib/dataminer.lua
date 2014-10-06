@@ -372,21 +372,21 @@ local function _newdataset()
       Available values are : 'Year', 'Month', 'Day', 'Hour', 'Minute', 'Second'
       If nil, 'Day' is used]](dataset.timechart)
 
-  function dataset:timegroup(span)
+  function dataset:timegroup(span, ...)
     _optional(span, 's', 'string')
-    return dtimegroup(self, span or DEFAULTSPAN)
+    return dtimegroup(self, span or DEFAULTSPAN, ...)
   end
   dataset:doc[[timegroup(s) - return a table of data set, grouped by 's'
   - s(string, optional): span of the timechart.
       Available values are : 'Year', 'Month', 'Day', 'Hour', 'Minute', 'Second'
-      If nil, 'Day' is used]](dataset.timegroup)
+      If nil, 'Day' is used
+	- keys(list of string, optional): keys to subgroup]](dataset.timegroup)
 
-  function dataset:group(key)
-    _mandatory(key, 'k', 'string')
-    return dgroup(self, key)
+  function dataset:group(...)
+    return dgroup(self, ...)
   end
-  dataset:doc[[group(k) - return a table of data set, grouped by distinct values of key 'k' 
-  - k(string, mandatory): key for the distinct value to group]](dataset.group)
+  dataset:doc[[group(k1, k2, ...) - return a table of data set, hierarchicaly grouped by distinct values of key 'k1', then 'k2', etc.  
+  - kX(string, mandatory): keys for the distinct value to group]](dataset.group)
 
   function dataset:search(values)
     _mandatory(values, 'v', 'table')
@@ -748,11 +748,10 @@ function dtimechart(dataset, key, group, func, span)
   return result
 end
 
-function dtimegroup(dataset, span)
+function dtimegroup(dataset, span, ...)
   local rt = _newdataset()
 	local collect = {}
 	local key = '#'..span
-
   -- collecting
   for _, line in dataset:lines() do
 		local sp = _getspan(line, span)
@@ -779,13 +778,20 @@ function dtimegroup(dataset, span)
 
 	rt:settimestamp(key, SPAN[span])
 	rt.groupkey = key 
+
+	-- subgrouping
+	for _,gline in rt:lines() do
+		gline[GROUPSTAMP] = dgroup(gline[GROUPSTAMP], ...)
+	end
   return rt
 end
 
-function dgroup(dataset, key)
+function dgroup(dataset, ...)
   local rt = _newdataset()
 	local collect = {}
-  if not key then return rt end
+	local keys = {...}
+	local key = keys[1]
+	if not key then return rt end
 
   -- collecting
   for _, line in dataset:lines() do
@@ -813,6 +819,14 @@ function dgroup(dataset, key)
 
 	-- set groupkey
 	rt.groupkey = key
+
+	-- Recursively fill groups
+	if #keys > 1 then
+		table.remove(keys, 1)
+		for _,gline in rt:lines() do
+			gline[GROUPSTAMP] = dgroup(gline[GROUPSTAMP], unpack(keys))
+		end
+	end
 
   return rt
 end
