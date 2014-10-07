@@ -134,12 +134,15 @@ local _dataset_meta = {
   end,
   __len = function(t) return #t.data end,
 	__index = function(t, k)
+		local data = rawget(t, 'data')
+		local groupkey = rawget(t, 'groupkey')
 		if type(k) == 'number' then
-			return t.data[k]
+			return data[k]
 		end
-		if type(k) == 'string' and t.groupkey then
-			for _,v in ipairs(t.data) do
-				if v[t.groupkey] == k then
+		
+		if type(k) == 'string' and groupkey then
+			for _,v in ipairs(data) do
+				if v[groupkey] == k then
 					return v[GROUPSTAMP]
 				end
 			end
@@ -171,7 +174,7 @@ module.TIMESTAMP = TIMESTAMP
 module.GROUPSTAMP = GROUPSTAMP
 module.GROUPFUNCTION = GROUPFUNCTION
 
-local function _newdataset()
+function _newdataset()
   -- create initial tables
   local dataset = {}
   setmetatable(dataset, _dataset_meta)
@@ -780,8 +783,10 @@ function dtimegroup(dataset, span, ...)
 	rt.groupkey = key 
 
 	-- subgrouping
-	for _,gline in rt:lines() do
-		gline[GROUPSTAMP] = dgroup(gline[GROUPSTAMP], ...)
+	if #{...} > 0 then
+		for _,gline in rt:lines() do
+			gline[GROUPSTAMP] = dgroup(gline[GROUPSTAMP], ...)
+		end
 	end
   return rt
 end
