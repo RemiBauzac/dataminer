@@ -173,6 +173,7 @@ local module = {}
 module.TIMESTAMP = TIMESTAMP
 module.GROUPSTAMP = GROUPSTAMP
 module.GROUPFUNCTION = GROUPFUNCTION
+module.uniq = _uniq
 
 function _newdataset()
   -- create initial tables
@@ -400,7 +401,7 @@ function _newdataset()
 
   function dataset:select(func)
     _optional(func, 'f', 'function')
-    return dselect(self.data, func)
+    return dselect(self, func)
   end
   dataset:doc[[select(f) - return a dataset with selected lines of function 'f'
   - f(function, optional): function used to select a line. Must return true if the line is selcted 
@@ -470,6 +471,15 @@ function module.avg(t)
     end
   end
   return s/#t
+end
+
+function module.median(t)
+	if math.mod(#t, 2) == 0 then
+		return (t[#t/2] + t[#t/2+1])/2
+	else
+		local idx = module.round(#t/2, 0)
+		return t[idx]
+	end
 end
 
 function module.count(t)
@@ -754,7 +764,7 @@ end
 function dtimegroup(dataset, span, ...)
   local rt = _newdataset()
 	local collect = {}
-	local key = '#'..span
+	local key = span
   -- collecting
   for _, line in dataset:lines() do
 		local sp = _getspan(line, span)
@@ -856,14 +866,20 @@ function dsearch(dataset, values)
   return result
 end
 
-function dselect(data, func)
+function dselect(dataset, func)
+	local data = dataset.data
   local f = func or function(l) return true end 
-  local result = _newdataset()
+  local rt = _newdataset()
 
   for _,line in ipairs(data) do
-    if f(line) then result = result + line end
+    if f(line) then rt = rt + line end
   end
-  return result
+	
+	if dataset.timefield and dataset.timeformat then
+		rt:settimestamp(dataset.timefield, dataset.timeformat)
+	end
+
+  return rt
 end
 
 function dexportcsv(data, allkeys, filename, separator, userkeys)
