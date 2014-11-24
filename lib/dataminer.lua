@@ -332,6 +332,16 @@ function _newdataset()
   - k(string, mandatory): key used as timestamp
   - fmt(string, mandatory): time format]](dataset.settimestamp)
 
+	function dataset:interval(_begin, _end)
+    _optional(_begin, 'begin', 'string')
+    _optional(_end, 'end', 'string')
+		return dinterval(self, _begin, _end)
+	end
+	dataset:doc[[interval(begin, end) - get time interval
+	- begin(string, optional): begin date of the interval
+	- end(string, optional): end date of the interval]](dataset.interval)
+
+
   function dataset:sort(param)
     dsort(self.data, param)
     return self
@@ -672,10 +682,35 @@ end
 
 function dsettimestamp(dataset, key, format)
   dataset.timefield = key
-  dataset.timeformat = format 
+  dataset.timeformat = format
   dataset:addkey(TIMESTAMP, 
     function(line) return _gettimestamp(line[key], format) end)
   dataset:timesort()
+end
+
+function dinterval(dataset, _begin, _end)
+	local rt = _newdataset()
+	local e,b = nil, nil
+	local r = _
+	if _begin then
+		b = _gettimestamp(_begin, dataset.timeformat)
+	end
+	if _end then
+		e = _gettimestamp(_end, dataset.timeformat)
+	end
+
+	return dataset:select(
+		function(line)
+			if e and b then
+				return line[TIMESTAMP] >= b and line[TIMESTAMP] <= e
+			elseif e then
+				return line[TIMESTAMP] <= e
+			elseif b then
+				return line[TIMESTAMP] >= b
+			else
+				return true 
+			end
+		end)
 end
 
 function dsort(data, param)
