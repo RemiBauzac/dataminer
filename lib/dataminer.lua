@@ -256,7 +256,7 @@ function _newdataset()
     _mandatory(key, 'k', 'string')
     return ddistinctvalues(self.data, key)
   end
-  dataset:doc[[distinct(k) - return a list with all key 'k' distinct values
+  dataset:doc[[distinctvalues(k) - return a list with all key 'k' distinct values
   - k(string, mandatory): name of the key distinct values]](dataset.distinctvalues)
 
   function dataset:replace(key, value, replace)
