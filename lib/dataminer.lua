@@ -35,6 +35,31 @@ local DEFAULTSPAN = 'Day'
 local docstrings = setmetatable({}, {__mode = "kv"})
 
 --
+-- XLS export constants
+--
+local XLS_XML = '<?xml version="1.0" encoding="UTF-8"?>'
+local XLS_WB_HEAD = [[<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet" xmlns:html="http://www.w3.org/TR/REC-html40">
+<DocumentProperties xmlns="urn:schemas-microsoft-com:office:office">
+  <Version>14.0</Version>
+</DocumentProperties>
+<OfficeDocumentSettings xmlns="urn:schemas-microsoft-com:office:office">
+  <AllowPNG/>
+</OfficeDocumentSettings>]]
+local XLS_WB_TAIL = '</Workbook>'
+local XLS_STYLES = '<Styles><Style ss:ID="number"><NumberFormat/></Style></Styles>'
+local XLS_WS_HEAD = '<Worksheet ss:Name="%s">'
+local XLS_WS_TAIL = '</Worksheet>'
+local XLS_T_HEAD = '<Table>'
+local XLS_T_TAIL = '</Table>'
+local XLS_R_HEAD = '<Row>'
+local XLS_R_TAIL = '</Row>'
+local XLS_C_HEAD = '<Cell>'
+local XLS_CNUM_HEAD = '<Cell ss:StyleID="number">'
+local XLS_C_TAIL = '</Cell>'
+local XLS_D_HEAD = '<Data ss:Type="%s">'
+local XLS_D_TAIL = '</Data>'
+
+--
 -- Helpers
 --
 local function _trim(s)
@@ -158,7 +183,10 @@ local _dataset_meta = {
 		return t
 	end,
 	__concat = function(d1, d2)
-		local r = _newdataset()
+		local name = ''
+		if d1._name then name = name..d1 end
+		if d2._name then name = name..'/'..d2 end
+		local r = _newdataset(name)
 		for _,l in d1:lines() do
 			r = r + l
 		end
@@ -175,7 +203,7 @@ module.GROUPSTAMP = GROUPSTAMP
 module.GROUPFUNCTION = GROUPFUNCTION
 module.uniq = _uniq
 
-function _newdataset()
+function _newdataset(name)
   -- create initial tables
   local dataset = {}
   setmetatable(dataset, _dataset_meta)
@@ -183,6 +211,7 @@ function _newdataset()
   dataset.keys = {}
   dataset.docs = setmetatable({}, {__mode = "kv"})
   dataset.shortdocs = setmetatable({}, {__mode = "kv"})
+	dataset._name = name
 
   -- doc function to create inline doc
   function dataset:doc(str)
@@ -208,6 +237,14 @@ function _newdataset()
   dataset:doc[[help(f) - print help for function 'f' and return the data set
   - f(function or string, optional): the function f which need help.
       If nil, print all the function's help]](dataset.help)
+
+	function dataset:name(name)
+    _mandatory(name, 'n', 'string')
+		self._name = name
+		return self
+	end
+	dataset:doc[[name(n) - set the name of dataset
+	- n(string, mandatory): name of the dataset]](dataset.name)
 
   function dataset:first() return self.data[1] end
   dataset:doc[[first() - return the data set first line]](dataset.first)
@@ -341,7 +378,6 @@ function _newdataset()
 	- begin(string, optional): begin date of the interval
 	- end(string, optional): end date of the interval]](dataset.interval)
 
-
   function dataset:sort(param)
     dsort(self.data, param)
     return self
@@ -417,17 +453,35 @@ function _newdataset()
   - f(function, optional): function used to select a line. Must return true if the line is selcted 
       If nil, all lines are selected]](dataset.select)
 
-  function dataset:csv(filename, separator, userkeys)
-    _mandatory(filename, 'f', 'string')
+	function dataset:exportkeys(userkeys)
+		_mandatory(userkeys, 'k', 'table')
+		dataset.userkeys = userkeys
+		return self
+	end
+	dataset:doc[[exportkeys(t) - set the keys to export (for csv or xls)
+	- t(table, optional): table of keys to export]](dataset.exportkeys)
+
+  function dataset:csv(filename, separator)
+    _optional(filename, 'f', 'string')
     _optional(separator, 's', 'string')
-    _optional(userkeys, 'k', 'table')
-    return dexportcsv(self.data, self.keys, filename, separator, userkeys)
+    return dexportcsv(self, filename, separator)
   end
   dataset:doc[[csv(f, s, k) - export data set in csv file, using 's' as separator, and return data set
   - f(string, mandatory): file name to export csv
   - s(string, optional): csv separator. ';' by default
-  - k(table, optional): key table to force only these on csv
   ]](dataset.csv)
+
+	function dataset:xls(filename)
+    _optional(filename, 'f', 'string')
+    return dexportxls(self, filename)
+	end
+  dataset:doc[[xls(f, k) - export data set in Excel xls file, and return data set
+  - f(string, mandatory): file name to export xls 
+  ]](dataset.xls)
+
+	function dataset:xlsws(output)
+		return dexportxlsws(self, output)
+	end
 
   return dataset
 end
@@ -441,7 +495,7 @@ function module.new(source, sourcetype, sourcesep)
   elseif sourcetype == 'lua' then
     return _newlua(source)
   else
-    return _newdataset()
+    return _newdataset(source)
   end
 end
 
@@ -456,6 +510,7 @@ function module.tonumber(number, round)
 end
 
 function module.round(number, dec)
+	if number == nil then return nil end
   local d = dec or 2
   fmt = '%.'..tostring(d)..'f'
   return tonumber(string.format(fmt, number)) 
@@ -497,7 +552,7 @@ function module.count(t)
 end
 
 function _newlua(t)
-  local result = _newdataset()
+  local result = _newdataset('luaTable')
 
   for _,v in ipairs(t) do
 		result = result + v
@@ -508,7 +563,7 @@ end
 function _newcsv(filename, awsep)
   local lines = {}
   local sep = awsep or ';'
-  local result = _newdataset()
+  local result = _newdataset('csvFile')
 
   -- Put file lines in a table
   for line in io.lines(filename) do
@@ -601,7 +656,7 @@ function ddistinct(data, key)
     else rt[line[key]] = 1 end
   end
 
-  local result = _newdataset()
+  local result = _newdataset('distinctCount')
   for k, v in pairs(rt) do
     result = result + {[key]= k, ['count']=v}
   end
@@ -650,7 +705,7 @@ function dkeywalk(data, key, func)
 end
 
 function dgroupwalk(dataset, func)
-	local rt = _newdataset()
+	local rt = _newdataset('groupWalk')
 	local key = dataset.groupkey
 	if not key then return rt end
 	
@@ -689,7 +744,7 @@ function dsettimestamp(dataset, key, format)
 end
 
 function dinterval(dataset, _begin, _end)
-	local rt = _newdataset()
+	local rt = _newdataset('Interval')
 	local e,b = nil, nil
 	local r = _
 	if _begin then
@@ -739,7 +794,7 @@ function dtop(data, pkey, fkey, func)
   end
 
   -- processing
-  local result = _newdataset()
+  local result = _newdataset('top')
   for k,v in pairs(rt) do
     result = result + {[pkey]=k, [fname]= f(v)}
   end
@@ -776,7 +831,7 @@ function dtimechart(dataset, key, group, func, span)
   end
 
   -- processing
-  local result = _newdataset()
+  local result = _newdataset('timeChart')
   if group then
     for k1,v1 in pairs(rt) do
       newline = {[span]=k1}
@@ -797,7 +852,7 @@ function dtimechart(dataset, key, group, func, span)
 end
 
 function dtimegroup(dataset, span, ...)
-  local rt = _newdataset()
+  local rt = _newdataset('timeGroup')
 	local collect = {}
 	local key = span
   -- collecting
@@ -806,7 +861,7 @@ function dtimegroup(dataset, span, ...)
     if sp and collect[sp] then
       collect[sp] = collect[sp] + line
     elseif sp then
-      collect[sp] = _newdataset()
+      collect[sp] = _newdataset('group')
       collect[sp] = collect[sp] + line
     end 
   end
@@ -837,7 +892,7 @@ function dtimegroup(dataset, span, ...)
 end
 
 function dgroup(dataset, ...)
-  local rt = _newdataset()
+  local rt = _newdataset('groupTable')
 	local collect = {}
 	local keys = {...}
 	local key = keys[1]
@@ -849,7 +904,7 @@ function dgroup(dataset, ...)
     if sp and collect[sp] then
       collect[sp] = collect[sp] + line
     elseif sp then
-      collect[sp] = _newdataset()
+      collect[sp] = _newdataset('group')
       collect[sp] = collect[sp] + line
     end 
   end
@@ -883,7 +938,7 @@ end
 
 function dsearch(dataset, values)
   local data = dataset.data
-  local result = _newdataset()
+  local result = _newdataset('search')
   local f, count = 1,0
   
   for i = f,#data,1 do
@@ -904,7 +959,7 @@ end
 function dselect(dataset, func)
 	local data = dataset.data
   local f = func or function(l) return true end 
-  local rt = _newdataset()
+  local rt = _newdataset('select')
 
   for _,line in ipairs(data) do
     if f(line) then rt = rt + line end
@@ -917,38 +972,101 @@ function dselect(dataset, func)
   return rt
 end
 
-function dexportcsv(data, allkeys, filename, separator, userkeys)
+function dexportcsv(dataset, filename, separator)
   local sep = separator or ';'
   local ssep = ','
   local ks = {} 
+	local exportname = filename or dataset._name..'.csv'
 
   if sep == ',' then ssep = ';' end
 
-  for _, k in ipairs(userkeys or allkeys) do
-    if k:sub(1,1) ~= '@' then
-      table.insert(ks, k)
-    end
+  for _, k in ipairs(dataset.userkeys or dataset.keys) do
+		if type(k) == 'string' and k:sub(1,1) ~= '@' then
+     	table.insert(ks, k)
+		elseif type(k) == 'table' and type(k[1]) == 'string' and k[1]:sub(1,1) ~= '@' then
+     	table.insert(ks, k[1])
+		end
   end
 
-  output = io.open(filename, 'w')
-  if not output then error('Cannot open file '..filename..' for writing') end
+  output = io.open(exportname, 'w')
+  if not output then error('Cannot open file '..exportname..' for writing') end
   output:write(table.concat(ks, sep)..'\n')
 
-  for _,line in ipairs(data) do
+  for _,line in ipairs(dataset.data) do
     local vs = {}
     for _,k in ipairs(ks) do
-      if k:sub(1,1) ~= '@' then
-        if type(line[k]) == 'table' then
-          table.insert(vs, table.concat(line[k], ssep))
-        else
-          table.insert(vs, line[k] or '')
-        end
-      end
+			table.insert(vs, tostring(line[k]) or '')
     end
     output:write(table.concat(vs, sep)..'\n')
   end
   output:close()
 end
+
+
+function dexportxlsws(dataset, output)
+  local ssep = ','
+  local ks = {}
+	output:write(string.format(XLS_WS_HEAD, dataset._name))
+	output:write(XLS_T_HEAD)
+
+  for _, k in ipairs(dataset.userkeys or dataset.keys) do
+    if type(k) == 'string' and k:sub(1,1) ~= '@' then
+      table.insert(ks, {k, 'string'})
+		elseif type(k) == 'table' and type(k[1]) == 'string' and k[1]:sub(1,1) ~= '@' then
+			table.insert(ks, k)
+    end
+  end
+
+	-- keys
+	output:write(XLS_R_HEAD)
+	for _,k in ipairs(ks) do
+		output:write(XLS_C_HEAD)
+		output:write(string.format(XLS_D_HEAD, "String"))
+		output:write(tostring(k[1]))
+		output:write(XLS_D_TAIL)
+		output:write(XLS_C_TAIL)
+	end
+	output:write(XLS_R_TAIL)
+
+  for _,line in ipairs(dataset.data) do
+		output:write(XLS_R_HEAD)
+    for _,k in ipairs(ks) do
+			value = line[k[1]]
+			if k[2] == 'string' then
+				output:write(XLS_C_HEAD)
+				output:write(string.format(XLS_D_HEAD, "String"))
+				output:write(tostring(value))
+			elseif k[2] == 'number' then
+				output:write(XLS_CNUM_HEAD)
+				output:write(string.format(XLS_D_HEAD, "Number"))
+				output:write(string.format('%f', miner.tonumber(value)))
+			end
+			output:write(XLS_D_TAIL)
+			output:write(XLS_C_TAIL)
+		end
+		output:write(XLS_R_TAIL)
+	end
+	output:write(XLS_T_TAIL)
+	output:write(XLS_WS_TAIL)
+	return dataset
+end
+
+
+function dexportxls(dataset, filename)
+	local exportname = filename or dataset._name..'.xls'
+
+  output = io.open(exportname, 'w')
+  if not output then error('Cannot open file '..exportname..' for writing') end
+
+	output:write(XLS_XML)
+	output:write(XLS_WB_HEAD)
+	output:write(XLS_STYLES)
+	dexportxlsws(dataset, output)
+	output:write(XLS_WB_TAIL)
+	output:close()
+	return dataset
+end
+
 
 
 -- exporting module
