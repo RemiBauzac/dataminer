@@ -453,13 +453,12 @@ function _newdataset(name)
   - f(function, optional): function used to select a line. Must return true if the line is selcted 
       If nil, all lines are selected]](dataset.select)
 
-	function dataset:exportkeys(userkeys)
-		_mandatory(userkeys, 'k', 'table')
-		dataset.userkeys = userkeys
+	function dataset:exportkeys(...)
+		dataset.userkeys = {...} 
 		return self
 	end
-	dataset:doc[[exportkeys(t) - set the keys to export (for csv or xls)
-	- t(table, optional): table of keys to export]](dataset.exportkeys)
+	dataset:doc[[exportkeys(...) - set the keys to export (for csv or xls)
+	- ...: list of keys to export]](dataset.exportkeys)
 
   function dataset:csv(filename, separator)
     _optional(filename, 'f', 'string')
@@ -549,6 +548,20 @@ end
 
 function module.count(t)
   return #t
+end
+
+function module.xls(filename, ...)
+  output = io.open(filename, 'w')
+  if not output then error('Cannot open file '..filename..' for writing') end
+
+	output:write(XLS_XML)
+	output:write(XLS_WB_HEAD)
+	output:write(XLS_STYLES)
+	for _, dataset in ipairs({...}) do
+		dataset:xlsws(output)
+	end
+	output:write(XLS_WB_TAIL)
+	output:close()
 end
 
 function _newlua(t)
@@ -1061,7 +1074,7 @@ function dexportxls(dataset, filename)
 	output:write(XLS_XML)
 	output:write(XLS_WB_HEAD)
 	output:write(XLS_STYLES)
-	dexportxlsws(dataset, output)
+	dataset:xlsws(output)
 	output:write(XLS_WB_TAIL)
 	output:close()
 	return dataset
