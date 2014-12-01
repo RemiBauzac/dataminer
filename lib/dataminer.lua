@@ -95,7 +95,7 @@ local function _gettimestamp(str, format)
   local parser = {}
   local match = format:gsub('%%[dmVYyHMS]', function(a)
       table.insert(parser, TIMESP[a]); return '(%d+)' end)
-  local timespec = {day=1, month=1, year=1970, hour=0, min=0, sec=0}
+  local timespec = {day=1, month=1, year=1970, hour=1, min=0, sec=0}
   if not str then return os.time(timespec) end
   local dt = {str:match(match)}
 
