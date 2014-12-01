@@ -9,6 +9,7 @@ local SPAN = {
   ['Year'] = '%Y',
   ['Month'] = '%m/%Y',
   ['Day'] = '%d/%m/%Y',
+  ['Week'] = '%V/%Y',
   ['Hour'] = '%d/%m/%Y %H',
   ['Minute'] = '%d/%m/%Y %H:%M',
   ['Second'] = '%d/%m/%Y %H:%M:%S',
