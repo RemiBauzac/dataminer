@@ -183,10 +183,10 @@ local _dataset_meta = {
 		return t
 	end,
 	__concat = function(d1, d2)
-		local name = ''
-		if d1._name then name = name..d1 end
-		if d2._name then name = name..'/'..d2 end
-		local r = _newdataset(name)
+		local newname = ''
+		if d1._name then newname = newname..d1._name end
+		if d2._name then newname = newname..'/'..d2._name end
+		local r = _newdataset(newname)
 		for _,l in d1:lines() do
 			r = r + l
 		end
@@ -203,7 +203,7 @@ module.GROUPSTAMP = GROUPSTAMP
 module.GROUPFUNCTION = GROUPFUNCTION
 module.uniq = _uniq
 
-function _newdataset(name)
+function _newdataset(_name)
   -- create initial tables
   local dataset = {}
   setmetatable(dataset, _dataset_meta)
@@ -211,7 +211,7 @@ function _newdataset(name)
   dataset.keys = {}
   dataset.docs = setmetatable({}, {__mode = "kv"})
   dataset.shortdocs = setmetatable({}, {__mode = "kv"})
-	dataset._name = name
+	dataset._name = _name
 
   -- doc function to create inline doc
   function dataset:doc(str)
@@ -1048,11 +1048,11 @@ function dexportxlsws(dataset, output)
 			if k[2] == 'string' then
 				output:write(XLS_C_HEAD)
 				output:write(string.format(XLS_D_HEAD, "String"))
-				output:write(tostring(value))
+				if value then output:write(tostring(value)) end
 			elseif k[2] == 'number' then
 				output:write(XLS_CNUM_HEAD)
 				output:write(string.format(XLS_D_HEAD, "Number"))
-				output:write(string.format('%f', miner.tonumber(value)))
+				if value then output:write(string.format('%f', miner.tonumber(value))) end
 			end
 			output:write(XLS_D_TAIL)
 			output:write(XLS_C_TAIL)
