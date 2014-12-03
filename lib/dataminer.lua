@@ -111,7 +111,9 @@ end
 local function _getspan(line, span)
   local sp = span or DEFAULTSPAN 
   if SPAN[sp] then
-    return os.date(SPAN[span], line[TIMESTAMP])
+    local a = os.date(SPAN[span], line[TIMESTAMP])
+		print(SPAN[span], line[TIMESTAMP], a)
+		return a
   end
   return os.date(SPAN[DEFAULTSPAN], line[TIMESTAMP])
 end
@@ -476,10 +478,18 @@ function _newdataset(name)
     _optional(separator, 's', 'string')
     return dexportcsv(self, filename, separator)
   end
-  dataset:doc[[csv(f, s, k) - export data set in csv file, using 's' as separator, and return data set
+  dataset:doc[[csv(f, s) - export data set in csv file, using 's' as separator, and return data set
   - f(string, mandatory): file name to export csv
   - s(string, optional): csv separator. ';' by default
   ]](dataset.csv)
+
+  function dataset:json(filename)
+    _optional(filename, 'f', 'string')
+    return dexportjson(self, filename)
+  end
+  dataset:doc[[json(f, s, k) - export data set in json file and return data set
+  - f(string, mandatory): file name to export json 
+  ]](dataset.json)
 
 	function dataset:xls(filename)
     _optional(filename, 'f', 'string')
@@ -1032,8 +1042,35 @@ function dexportcsv(dataset, filename, separator)
     output:write(table.concat(vs, sep)..'\n')
   end
   output:close()
+	return dataset
 end
 
+function dexportjson(dataset, filename)
+	local ks = {}
+	local exportname = filename or dataset._name..'.json'
+
+  for _, k in ipairs(dataset.userkeys or dataset.keys) do
+		if type(k) == 'string' and k:sub(1,1) ~= '@' then
+     	table.insert(ks, k)
+		elseif type(k) == 'table' and type(k[1]) == 'string' and k[1]:sub(1,1) ~= '@' then
+     	table.insert(ks, k[1])
+		end
+  end
+
+  output = io.open(exportname, 'w')
+  if not output then error('Cannot open file '..exportname..' for writing') end
+	output:write('[') 
+	for _,line in ipairs(dataset.data) do
+		output:write('{')
+		for _,k in ipairs(ks) do
+			output:write(string.format('"%s":"%s", ', k, tostring(line[k])))
+		end
+		output:write('},')
+	end
+	output:write(']')
+  output:close()
+	return dataset
+end
 
 function dexportxlsws(dataset, output)
   local ssep = ','
