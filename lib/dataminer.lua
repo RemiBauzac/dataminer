@@ -111,9 +111,7 @@ end
 local function _getspan(line, span)
   local sp = span or DEFAULTSPAN 
   if SPAN[sp] then
-    local a = os.date(SPAN[span], line[TIMESTAMP])
-		print(SPAN[span], line[TIMESTAMP], a)
-		return a
+    return os.date(SPAN[span], line[TIMESTAMP])
   end
   return os.date(SPAN[DEFAULTSPAN], line[TIMESTAMP])
 end
