@@ -8,12 +8,14 @@ local GROUPFUNCTION='f(group)'
 local SPAN = {
   ['Year'] = '%Y',
   ['Month'] = '%m/%Y',
+  ['Week'] = '%V/%Y',
   ['Day'] = '%d/%m/%Y',
   ['Hour'] = '%d/%m/%Y %H',
   ['Minute'] = '%d/%m/%Y %H:%M',
   ['Second'] = '%d/%m/%Y %H:%M:%S',
   ['%Y'] = 'Year',
   ['%m/%Y'] = 'Month',
+  ['%V/%Y'] = 'Week',
   ['%d/%m/%Y'] = 'Day',
   ['%d/%m/%Y %H'] = 'Hour',
   ['%d/%m/%Y %H:%M'] = 'Minute',
@@ -22,6 +24,7 @@ local SPAN = {
 
 local TIMESP = {
   ['%d'] = 'day',
+	['%V'] = 'week',
   ['%m'] = 'month',
   ['%Y'] = 'Year',
   ['%y'] = 'year',
@@ -90,15 +93,17 @@ end
 
 local function _gettimestamp(str, format)
   local parser = {}
-  local match = format:gsub('%%[dmYyHMS]', function(a)
+  local match = format:gsub('%%[dmVYyHMS]', function(a)
       table.insert(parser, TIMESP[a]); return '(%d+)' end)
-  local timespec = {day=1, month=1, year=1970, hour=1, min=0, sec=0}
+  local timespec = {day=1, month=1, year=1970, hour=0, min=0, sec=0}
   if not str then return os.time(timespec) end
   local dt = {str:match(match)}
+
   for k, v in ipairs(parser) do
     if v == 'year' then dt[k] = dt[k]+2000 end
     if v == 'Year' then v = 'year' end
-    timespec[v] = dt[k]
+		if v == 'week' then v = 'day'; dt[k] = dt[k]*7 end
+		timespec[v] = dt[k]
   end
   return os.time(timespec)
 end
@@ -106,7 +111,9 @@ end
 local function _getspan(line, span)
   local sp = span or DEFAULTSPAN 
   if SPAN[sp] then
-    return os.date(SPAN[span], line[TIMESTAMP])
+    local a = os.date(SPAN[span], line[TIMESTAMP])
+		print(SPAN[span], line[TIMESTAMP], a)
+		return a
   end
   return os.date(SPAN[DEFAULTSPAN], line[TIMESTAMP])
 end
@@ -175,11 +182,17 @@ local _dataset_meta = {
 		return nil
 	end,
 	__add = function(t, l)
+		local c = 0
   	for k,_ in pairs(l) do
+			c = c + 1
     	_uniq(t.keys, k)
   	end
-  	setmetatable(l, _line_meta)
-  	table.insert(t.data, l)
+		if c > 0 then
+  		setmetatable(l, _line_meta)
+  		table.insert(t.data, l)
+		else
+			print("Empty line")
+		end
 		return t
 	end,
 	__concat = function(d1, d2)
@@ -465,10 +478,18 @@ function _newdataset(_name)
     _optional(separator, 's', 'string')
     return dexportcsv(self, filename, separator)
   end
-  dataset:doc[[csv(f, s, k) - export data set in csv file, using 's' as separator, and return data set
+  dataset:doc[[csv(f, s) - export data set in csv file, using 's' as separator, and return data set
   - f(string, mandatory): file name to export csv
   - s(string, optional): csv separator. ';' by default
   ]](dataset.csv)
+
+  function dataset:json(filename)
+    _optional(filename, 'f', 'string')
+    return dexportjson(self, filename)
+  end
+  dataset:doc[[json(f, s, k) - export data set in json file and return data set
+  - f(string, mandatory): file name to export json 
+  ]](dataset.json)
 
 	function dataset:xls(filename)
     _optional(filename, 'f', 'string')
@@ -597,11 +618,15 @@ function _newcsv(filename, awsep)
   table.remove(lines, 1) 
 
   for lidx,line in ipairs(lines) do
-    local nl, idx, temp = {}, 1, nil 
+		-- Add sep at the end of the line, to get the last value of the line with gmatch
+    local nl, idx, temp = {}, 1, nil
     for value in string.gmatch(line, '(.-'..sep..')') do
       if not result.keys[idx] then
         error(string.format('CSV parsing error at line %d, column %d', lidx, idx))
       end
+			-- ugly case of "" in a string
+			value = value:gsub('""','')
+
       -- value is about "...." without separator inside (have to remove last one)
       if value:byte() == 34 and value:byte(#value-1) == 34 and temp == nil then
         nl[result.keys[idx]] = value:sub(1,-2)
@@ -624,6 +649,10 @@ function _newcsv(filename, awsep)
         idx = idx + 1
       end
     end
+		if idx-1 > #result.keys then
+			error(string.format('CSV parsing error at line %d, bad columns number (%d instead of %d):%s',
+				lidx, idx-1, #result.keys, line))
+		end
     result = result + nl
   end
   return result
@@ -1013,8 +1042,35 @@ function dexportcsv(dataset, filename, separator)
     output:write(table.concat(vs, sep)..'\n')
   end
   output:close()
+	return dataset
 end
 
+function dexportjson(dataset, filename)
+	local ks = {}
+	local exportname = filename or dataset._name..'.json'
+
+  for _, k in ipairs(dataset.userkeys or dataset.keys) do
+		if type(k) == 'string' and k:sub(1,1) ~= '@' then
+     	table.insert(ks, k)
+		elseif type(k) == 'table' and type(k[1]) == 'string' and k[1]:sub(1,1) ~= '@' then
+     	table.insert(ks, k[1])
+		end
+  end
+
+  output = io.open(exportname, 'w')
+  if not output then error('Cannot open file '..exportname..' for writing') end
+	output:write('[') 
+	for _,line in ipairs(dataset.data) do
+		output:write('{')
+		for _,k in ipairs(ks) do
+			output:write(string.format('"%s":"%s", ', k, tostring(line[k])))
+		end
+		output:write('},')
+	end
+	output:write(']')
+  output:close()
+	return dataset
+end
 
 function dexportxlsws(dataset, output)
   local ssep = ','
