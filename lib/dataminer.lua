@@ -180,17 +180,8 @@ local _dataset_meta = {
 		return nil
 	end,
 	__add = function(t, l)
-		local c = 0
-  	for k,_ in pairs(l) do
-			c = c + 1
-    	_uniq(t.keys, k)
-  	end
-		if c > 0 then
-  		setmetatable(l, _line_meta)
-  		table.insert(t.data, l)
-		else
-			print("Empty line")
-		end
+  	setmetatable(l, _line_meta)
+  	table.insert(t.data, l)
 		return t
 	end,
 	__concat = function(d1, d2)
@@ -219,7 +210,6 @@ function _newdataset(_name)
   local dataset = {}
   setmetatable(dataset, _dataset_meta)
   dataset.data = {}
-  dataset.keys = {}
   dataset.docs = setmetatable({}, {__mode = "kv"})
   dataset.shortdocs = setmetatable({}, {__mode = "kv"})
 	dataset._name = _name
@@ -266,7 +256,7 @@ function _newdataset(_name)
   function dataset:addkey(key, func)
     _mandatory(key, 'k', 'string')
     _optional(func, 'f', 'function')
-    daddkey(self.data, self.keys, key, func)
+    daddkey(self.data, key, func)
     return self
   end
   dataset:doc[[addkey(k, f) - add a key named 'k' on each line and return the data set
@@ -287,7 +277,7 @@ function _newdataset(_name)
 
   function dataset:delkey(key)
     _mandatory(key, 'k', 'string')
-    ddelkey(self.data, self.keys, key)
+    ddelkey(self.data, key)
     return self
   end
   dataset:doc[[delkey(k) - delete the key named 'k' on each line and return the data set
@@ -367,8 +357,9 @@ function _newdataset(_name)
   dataset:doc[[print(limit) - print data set lines to the console, according to 'limit'
   - limit(number, optional): limit the number of printed lines]](dataset.print)
 
-  function dataset:printkeys() dprintkeys(self.keys); return self end
-  dataset:doc[[printkeys() - print all the keys of the dataset]](dataset.printkeys)
+  function dataset:keys() return dkeys(self.data) end
+  dataset:doc[[printkeys() - print all the keys of the dataset]](dataset.keys)
+
 
   function dataset:settimestamp(key, format)
     _mandatory(key, 'k', 'string')
@@ -530,7 +521,7 @@ end
 function module.round(number, dec)
 	if number == nil then return nil end
   local d = dec or 2
-  fmt = '%.'..tostring(d)..'f'
+ 	local fmt = '%.'..tostring(d)..'f'
   return tonumber(string.format(fmt, number)) 
 end
 
@@ -592,66 +583,65 @@ function _newlua(t)
   return result
 end
 
+function ParseCSVLine (line,sep)
+  local res = {}
+  local pos = 1
+  sep = sep or ','
+  while true do 
+    local c = string.sub(line,pos,pos)
+    if (c == "") then break end
+    if (c == '"') then
+      -- quoted value (ignore separator within)
+      local txt = ""
+      repeat
+        local startp,endp = string.find(line,'^%b""',pos)
+        txt = txt..string.sub(line,startp+1,endp-1)
+        pos = endp + 1
+        c = string.sub(line,pos,pos) 
+        if (c == '"') then txt = txt..'"' end 
+        -- check first char AFTER quoted string, if it is another
+        -- quoted string without separator, then append it
+        -- this is the way to "escape" the quote char in a quote. example:
+        --   value1,"blub""blip""boing",value3  will result in blub"blip"boing  for the middle
+      until (c ~= '"')
+      table.insert(res,txt)
+      assert(c == sep or c == "")
+      pos = pos + 1
+    else  
+      -- no quotes used, just look for the first separator
+      local startp,endp = string.find(line,sep,pos)
+      if (startp) then 
+        table.insert(res,string.sub(line,pos,startp-1))
+        pos = endp + 1
+      else
+        -- no separator found -> use rest of string and terminate
+        table.insert(res,string.sub(line,pos))
+        break
+      end 
+    end
+  end
+  return res
+end
+
 function _newcsv(filename, awsep)
   local lines = {}
   local sep = awsep or ';'
   local result = _newdataset('csvFile')
-
+  keys = {}
   -- Put file lines in a table
+  local lnum = 0
   for line in io.lines(filename) do
-    -- remove leading and trailing whitespaces
-    line = _trim(line)
-    if line:byte(line:len()) ~= sep:byte(sep:len()) then line = line..sep end
-    table.insert(lines, line)
-  end
-
-  -- Take care of empty file
-  if #lines == 0 then return result end
-
-  -- Parse header
-  for header in string.gmatch(lines[1], "(.-)"..sep) do
-    head,_ = string.gsub(header,"\"", "")
-    _uniq(result.keys, head)
-  end
-  table.remove(lines, 1) 
-
-  for lidx,line in ipairs(lines) do
-		-- Add sep at the end of the line, to get the last value of the line with gmatch
-    local nl, idx, temp = {}, 1, nil
-    for value in string.gmatch(line, '(.-'..sep..')') do
-      if not result.keys[idx] then
-        error(string.format('CSV parsing error at line %d, column %d', lidx, idx))
+    local lt = ParseCSVLine(line, sep)
+    if lnum == 0 then
+      keys = lt
+    else
+      local newline = {}
+      for idx, key in ipairs(keys) do
+        newline[key] = lt[idx]
       end
-			-- ugly case of "" in a string
-			value = value:gsub('""','')
-
-      -- value is about "...." without separator inside (have to remove last one)
-      if value:byte() == 34 and value:byte(#value-1) == 34 and temp == nil then
-        nl[result.keys[idx]] = value:sub(1,-2)
-        idx = idx + 1
-      -- value starts with " with separator inside (don't remove it)
-      elseif value:byte() == 34 and temp == nil then
-        temp = value
-      -- value ends with " without separator inside (have to remove last one)
-      elseif temp ~= nil and value:byte(#value-1) == 34 then
-        temp = temp..value:sub(1, -2)
-        nl[result.keys[idx]] = temp
-        idx = idx + 1
-        temp = nil
-      -- value continue, have to wait last ", don't remove separator
-      elseif temp ~= nil then
-        temp = temp..value
-      -- value is standard (no separator, no ")
-      else
-        nl[result.keys[idx]] = value:sub(1, -2)
-        idx = idx + 1
-      end
+      result = result + newline
     end
-		if idx-1 > #result.keys then
-			error(string.format('CSV parsing error at line %d, bad columns number (%d instead of %d):%s',
-				lidx, idx-1, #result.keys, line))
-		end
-    result = result + nl
+    lnum = lnum + 1
   end
   return result
 end
@@ -659,32 +649,19 @@ end
 --
 -- Data set functions
 --
-function dappend(dataset, line)
-  for k,_ in pairs(line) do
-    _uniq(dataset.keys, k)
-  end
-  setmetatable(line, _line_meta)
-  table.insert(dataset.data, line)
-end
-
-function daddkey(data, keys, key, func)
+function daddkey(data, key, func)
   local afunc = func or function() return '' end
 
   for _,line in ipairs(data) do
     line[key] = afunc(line)
   end
-  table.insert(keys, key)
 end
 
-function ddelkey(data, keys, key)
+function ddelkey(data, key)
   local keyidx = 0
   for _,line in ipairs(data) do
     line[key] = nil 
   end
-  for k,v in ipairs(keys) do
-    if v == key then keyidx = k; break end
-  end
-  table.remove(keys, keyidx)
 end
 
 function ddistinct(data, key)
@@ -769,10 +746,18 @@ function dgroupaddkey(dataset, key, func)
 	table.insert(dataset.keys, key)
 end
 
-function dprintkeys(keys)
-  for _, k in ipairs(keys) do
-    io.write(string.format('%s\n', k))
+function dkeys(data)
+  local keys = {}
+  local ret = {}
+  for _, line in ipairs(data) do
+    for k,_ in pairs(line) do
+      keys[k] = true
+    end
   end
+  for k, _ in pairs(keys) do
+    table.insert(ret, k)
+  end
+  return ret 
 end
 
 function dsettimestamp(dataset, key, format)
@@ -1020,7 +1005,7 @@ function dexportcsv(dataset, filename, separator)
 
   if sep == ',' then ssep = ';' end
 
-  for _, k in ipairs(dataset.userkeys or dataset.keys) do
+  for _, k in ipairs(dataset.userkeys or dataset:keys()) do
 		if type(k) == 'string' and k:sub(1,1) ~= '@' then
      	table.insert(ks, k)
 		elseif type(k) == 'table' and type(k[1]) == 'string' and k[1]:sub(1,1) ~= '@' then
@@ -1047,7 +1032,7 @@ function dexportjson(dataset, filename)
 	local ks = {}
 	local exportname = filename or dataset._name..'.json'
 
-  for _, k in ipairs(dataset.userkeys or dataset.keys) do
+  for _, k in ipairs(dataset.userkeys or dataset:keys()) do
 		if type(k) == 'string' and k:sub(1,1) ~= '@' then
      	table.insert(ks, k)
 		elseif type(k) == 'table' and type(k[1]) == 'string' and k[1]:sub(1,1) ~= '@' then
@@ -1076,7 +1061,7 @@ function dexportxlsws(dataset, output)
 	output:write(string.format(XLS_WS_HEAD, dataset._name))
 	output:write(XLS_T_HEAD)
 
-  for _, k in ipairs(dataset.userkeys or dataset.keys) do
+  for _, k in ipairs(dataset.userkeys or dataset:keys()) do
     if type(k) == 'string' and k:sub(1,1) ~= '@' then
       table.insert(ks, {k, 'string'})
 		elseif type(k) == 'table' and type(k[1]) == 'string' and k[1]:sub(1,1) ~= '@' then
