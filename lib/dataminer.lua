@@ -643,6 +643,7 @@ function _newcsv(filename, awsep)
     end
     lnum = lnum + 1
   end
+  collectgarbage("collect")
   return result
 end
 
@@ -662,6 +663,7 @@ function ddelkey(data, key)
   for _,line in ipairs(data) do
     line[key] = nil 
   end
+  collectgarbage("collect")
 end
 
 function ddistinct(data, key)
@@ -757,6 +759,7 @@ function dkeys(data)
   for k, _ in pairs(keys) do
     table.insert(ret, k)
   end
+  keys = nil
   return ret 
 end
 
