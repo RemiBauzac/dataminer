@@ -65,17 +65,6 @@ local XLS_D_TAIL = '</Data>'
 --
 -- Helpers
 --
-local function _trim(s)
-  return s:gsub("^%s*(.-)%s*$", "%1")
-end 
-
-local function _uniq(t, value)
-  for _,v in ipairs(t) do
-    if v == value then return end
-  end
-  table.insert(t, value)
-end
-
 local function _mandatory(value, name, awtype)
   if value and awtype == 'all' then return end
   if type(value) ~= awtype then
@@ -185,6 +174,7 @@ local _dataset_meta = {
 		return t
 	end,
 	__concat = function(d1, d2)
+    -- TODO: check if keylist are the same
 		local newname = ''
 		if d1._name then newname = newname..d1._name end
 		if d2._name then newname = newname..'/'..d2._name end
@@ -203,7 +193,6 @@ local module = {}
 module.TIMESTAMP = TIMESTAMP
 module.GROUPSTAMP = GROUPSTAMP
 module.GROUPFUNCTION = GROUPFUNCTION
-module.uniq = _uniq
 
 function _newdataset(_name)
   -- create initial tables
@@ -351,7 +340,7 @@ function _newdataset(_name)
 
   function dataset:print(limit)
     _optional(limit, 'limit', 'number')
-    dprint(self.data, limit);
+    dprint(self, limit);
     return self
   end
   dataset:doc[[print(limit) - print data set lines to the console, according to 'limit'
@@ -633,13 +622,13 @@ function _newcsv(filename, awsep)
   for line in io.lines(filename) do
     local lt = ParseCSVLine(line, sep)
     if lnum == 0 then
-      keys = lt
-    else
-      local newline = {}
-      for idx, key in ipairs(keys) do
-        newline[key] = lt[idx]
+      result.keylist = lt
+      result.keyidx = {}
+      for idx, key in ipairs(lt) do
+        result.keyidx[key] = idx
       end
-      result = result + newline
+    else
+      result = result + lt 
     end
     lnum = lnum + 1
   end
@@ -703,13 +692,20 @@ function dreplace(data, key, value, replace)
   end
 end
 
-function dprint(data, limit)
-  local count = 0
-  for _,v in ipairs(data) do
-    count = count + 1
+function dprint(dataset, limit)
+  for _, key in ipairs(dataset.keylist) do
+    io.write(string.format('%s; ', key))
+  end
+  io.write('\n')
+  io.flush()
+  for count,line in ipairs(dataset.data) do
     if limit and count > limit then break end
-    print(v)
-   end
+    for _, v in ipairs(line) do 
+      io.write(string.format('%s; ', v))
+    end
+    io.write('\n')
+    io.flush()
+  end
 end
 
 function dkeywalk(data, key, func)
