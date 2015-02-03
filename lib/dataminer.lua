@@ -250,9 +250,13 @@ function _newdataset(_name)
   - f(function, optional): function to compute key, with the current group lines as parameter.
       If nil, empty string is set for the key on all lines]](dataset.groupaddkey)
 
+  -- OK
   function dataset:delkey(key)
     _mandatory(key, 'k', 'string')
-    ddelkey(self.data, key)
+    local idx = self.keyidx[key]
+    table.remove(self.keylist, idx)
+    self.keyidx[key] = nil
+    ddelkey(self, idx)
     return self
   end
   dataset:doc[[delkey(k) - delete the key named 'k' on each line and return the data set
@@ -627,10 +631,11 @@ function daddkey(data, idx, func)
   end
 end
 
-function ddelkey(data, key)
+-- OK
+function ddelkey(dataset, idx)
   local keyidx = 0
-  for _,line in ipairs(data) do
-    line[key] = nil 
+  for _,line in dataset:lines() do
+    table.remove(line, idx)
   end
   collectgarbage("collect")
 end
