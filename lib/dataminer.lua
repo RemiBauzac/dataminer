@@ -4,6 +4,7 @@
 local TIMESTAMP='@timestamp'
 local GROUPSTAMP='@group'
 local GROUPFUNCTION='f(group)'
+local DATASET='@DATASET'
 
 local SPAN = {
   ['Year'] = '%Y',
@@ -116,22 +117,14 @@ local _line_meta = {
     end
     return ret
   end,
-  __tostring = function(t)
-    local ret = ''
-    for k, v in pairs(t) do
-      if k:sub(1,1) ~= '@' then
-        if type(v) == 'table' then
-          ret = ret..string.format('%s=', k)
-          for _,v2 in ipairs(v) do
-            ret = ret..string.format('%s,', v2)
-          end
-          ret = ret..'\b '
-        else
-          ret = ret..string.format('%s=%s ', k, v)
-        end
-      end
+  __index = function(t, i)
+    if type(i) == 'number' then
+      return t[i]
+    else
+      local dataset = rawget(t, DATASET)
+      local idx = dataset.keyidx[i]
+      return t[idx]
     end
-    return ret
   end
 }
 
@@ -154,23 +147,12 @@ local _dataset_meta = {
   __len = function(t) return #t.data end,
 	__index = function(t, k)
 		local data = rawget(t, 'data')
-		local groupkey = rawget(t, 'groupkey')
-		if type(k) == 'number' then
-			return data[k]
-		end
-		
-		if type(k) == 'string' and groupkey then
-			for _,v in ipairs(data) do
-				if v[groupkey] == k then
-					return v[GROUPSTAMP]
-				end
-			end
-		end
-		return nil
+    return data[k]
 	end,
 	__add = function(t, l)
   	setmetatable(l, _line_meta)
   	table.insert(t.data, l)
+    l[DATASET] = t
 		return t
 	end,
 	__concat = function(d1, d2)
