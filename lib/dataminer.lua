@@ -242,10 +242,14 @@ function _newdataset(_name)
   function dataset:last() return self.data[#self.data] end
   dataset:doc[[last() - return the data set last line]](dataset.last)
 
+  -- OK
   function dataset:addkey(key, func)
     _mandatory(key, 'k', 'string')
     _optional(func, 'f', 'function')
-    daddkey(self.data, key, func)
+    local idx = #self.keylist+1
+    self.keylist[idx] = key
+    self.keyidx[key] = idx
+    daddkey(self.data, idx, func)
     return self
   end
   dataset:doc[[addkey(k, f) - add a key named 'k' on each line and return the data set
@@ -338,6 +342,7 @@ function _newdataset(_name)
   dataset:doc[[groupwalk(k, f) - walk through groups of a grouped dataset and return a new dataset with result of function 'f' applied of all lines of this group
   - f(function, mandatory): function to compute the values (as group keys and dataset) ]] (dataset.groupwalk)
 
+  -- OK
   function dataset:print(limit)
     _optional(limit, 'limit', 'number')
     dprint(self, limit);
@@ -378,6 +383,7 @@ function _newdataset(_name)
       If p is a function, this function is used as compare function.
       If p is a string, it is used as key to sort by values of this key (number awaited)]](dataset.sort)
 
+  -- OK
   function dataset:timesort()
     table.sort(self.data, function(a, b)
        return a[TIMESTAMP] and b[TIMESTAMP] and a[TIMESTAMP] < b[TIMESTAMP] end)
@@ -412,16 +418,6 @@ function _newdataset(_name)
   - s(string, optional): span of the timechart.
       Available values are : 'Year', 'Month', 'Day', 'Hour', 'Minute', 'Second'
       If nil, 'Day' is used]](dataset.timechart)
-
-  function dataset:timegroup(span, ...)
-    _optional(span, 's', 'string')
-    return dtimegroup(self, span or DEFAULTSPAN, ...)
-  end
-  dataset:doc[[timegroup(s) - return a table of data set, grouped by 's'
-  - s(string, optional): span of the timechart.
-      Available values are : 'Year', 'Month', 'Day', 'Hour', 'Minute', 'Second'
-      If nil, 'Day' is used
-	- keys(list of string, optional): keys to subgroup]](dataset.timegroup)
 
   function dataset:group(...)
     return dgroup(self, ...)
@@ -639,11 +635,13 @@ end
 --
 -- Data set functions
 --
-function daddkey(data, key, func)
+
+-- OK
+function daddkey(data, idx, func)
   local afunc = func or function() return '' end
 
   for _,line in ipairs(data) do
-    line[key] = afunc(line)
+    line[idx] = afunc(line)
   end
 end
 
@@ -692,6 +690,7 @@ function dreplace(data, key, value, replace)
   end
 end
 
+-- OK
 function dprint(dataset, limit)
   for _, key in ipairs(dataset.keylist) do
     io.write(string.format('%s; ', key))
@@ -759,12 +758,22 @@ function dkeys(data)
   return ret 
 end
 
+-- OK
 function dsettimestamp(dataset, key, format)
+  -- Set timestamp
   dataset.timefield = key
   dataset.timeformat = format
-  dataset:addkey(TIMESTAMP, 
-    function(line) return _gettimestamp(line[key], format) end)
+  for _, line in dataset:lines() do
+    line[TIMESTAMP] = _gettimestamp(line[dataset.keyidx[key]], format)
+  end
   dataset:timesort()
+
+  -- Time spanning now
+  for _, span in ipairs({'Year', 'Month', 'Week', 'Day', 'Hour', 'Minute', 'Second'}) do
+    for _, line in dataset:lines() do
+      line[span] = _getspan(line, span)
+    end
+  end
 end
 
 function dinterval(dataset, _begin, _end)
@@ -873,46 +882,6 @@ function dtimechart(dataset, key, group, func, span)
   -- timestamping and sorting
   result:settimestamp(span, SPAN[span]) 
   return result
-end
-
-function dtimegroup(dataset, span, ...)
-  local rt = _newdataset('timeGroup')
-	local collect = {}
-	local key = span
-  -- collecting
-  for _, line in dataset:lines() do
-		local sp = _getspan(line, span)
-    if sp and collect[sp] then
-      collect[sp] = collect[sp] + line
-    elseif sp then
-      collect[sp] = _newdataset('group')
-      collect[sp] = collect[sp] + line
-    end 
-  end
-
-	-- create dataset
-	for k,v in pairs(collect) do
-		rt = rt + {[key] = k, [GROUPSTAMP] = v}
-	end
-
-  -- timestamping and sorting
-	if dataset.timefield and dataset.timeformat then
-		for _,gl in rt:lines() do
-			local g = gl[GROUPSTAMP]
-    	g:settimestamp(dataset.timefield, dataset.timeformat)
-  	end
-	end
-
-	rt:settimestamp(key, SPAN[span])
-	rt.groupkey = key 
-
-	-- subgrouping
-	if #{...} > 0 then
-		for _,gline in rt:lines() do
-			gline[GROUPSTAMP] = dgroup(gline[GROUPSTAMP], ...)
-		end
-	end
-  return rt
 end
 
 function dgroup(dataset, ...)
