@@ -146,8 +146,11 @@ local _dataset_meta = {
   end,
   __len = function(t) return #t.data end,
 	__index = function(t, k)
-		local data = rawget(t, 'data')
-    return data[k]
+    if type(k) == 'number' then
+		  local data = rawget(t, 'data')
+      return data[k]
+    end
+      return rawget(t, k)
 	end,
 	__add = function(t, l)
     if #t.keylist ~= #l then
@@ -291,18 +294,9 @@ function _newdataset(_name, ...)
   - v(all, mandatory): value to replace 
   - r(all, mandatory): new value]](dataset.replace)
 
+  -- OK
   function dataset:lines() return ipairs(self.data) end
   dataset:doc[[lines() - return the iterator on data set lines]](dataset.lines)
-
-  function dataset:glines()
-		local group = {}
-		if not self.groupkey then return pairs(group) end
-		for _, l in self:lines() do
-			group[l[self.groupkey]] = l[GROUPSTAMP]
-		end
-		return pairs(group)
-	end
-  dataset:doc[[glines() - return the iterator on group lines]](dataset.glines)
 
 	function dataset:grouptable()
 		local group = {}
@@ -314,10 +308,11 @@ function _newdataset(_name, ...)
 	end
   dataset:doc[[glines() - return group as a table]](dataset.grouptable)
 
+  -- OK
   function dataset:keywalk(key, func)
     _mandatory(key, 'k', 'string')
     _optional(func, 'f', 'function')
-    return dkeywalk(self.data, key, func)
+    return dkeywalk(self, self.keyidx[key], func)
   end
   dataset:doc[[keywalk(k, f) - walk through all key 'k' values and return the result of function 'f' applied on it
   - k(string, mandatory): key to walk through
@@ -340,10 +335,11 @@ function _newdataset(_name, ...)
   dataset:doc[[print(limit) - print data set lines to the console, according to 'limit'
   - limit(number, optional): limit the number of printed lines]](dataset.print)
 
-  function dataset:keys() return dkeys(self.data) end
-  dataset:doc[[printkeys() - print all the keys of the dataset]](dataset.keys)
+  -- OK
+  function dataset:keys() return self.keylist end
+  dataset:doc[[keys() - print all the keys of the dataset]](dataset.keys)
 
-
+  -- OK
   function dataset:settimestamp(key, format)
     _mandatory(key, 'k', 'string')
     _mandatory(format, 'fmt', 'string')
@@ -354,17 +350,9 @@ function _newdataset(_name, ...)
   - k(string, mandatory): key used as timestamp
   - fmt(string, mandatory): time format]](dataset.settimestamp)
 
-	function dataset:interval(_begin, _end)
-    _optional(_begin, 'begin', 'string')
-    _optional(_end, 'end', 'string')
-		return dinterval(self, _begin, _end)
-	end
-	dataset:doc[[interval(begin, end) - get time interval
-	- begin(string, optional): begin date of the interval
-	- end(string, optional): end date of the interval]](dataset.interval)
-
+  -- OK
   function dataset:sort(param)
-    dsort(self.data, param)
+    dsort(self, param)
     return self
   end
   dataset:doc[[sort(p) - sort data set with 'p' and return the data set
@@ -380,11 +368,13 @@ function _newdataset(_name, ...)
   end
   dataset:doc[[timesort() - use timestamp (added with settimestamp) to sort in time order and return data set]](dataset.timesort)
 
+  -- OK
   function dataset:top(pkey, fkey, func)
     _mandatory(pkey, 'k', 'string')
     _mandatory(fkey, 'ck', 'string')
     _optional(func, 'f', 'function')
-    return dtop(self.data, pkey, fkey, func)
+    return dtop(self, pkey, self.keyidx[pkey],
+        string.format('f(%s)',fkey), self.keyidx[fkey], func)
   end
   dataset:doc[[top(k, ck, f) - return a new dataset with top of key 'k' values, according to function 'f' applied to key 'ck'
   - k(string, mandatory): top key
@@ -421,6 +411,7 @@ function _newdataset(_name, ...)
   dataset:doc[[search(v) - return a dataset with lines matching values 'v' 
   - v(table, mandatory): key/value table to match dataset key/value]](dataset.search)
 
+  -- OK
   function dataset:select(func)
     _optional(func, 'f', 'function')
     return dselect(self, func)
@@ -696,12 +687,13 @@ function dprint(dataset, limit)
   end
 end
 
-function dkeywalk(data, key, func)
+-- OK
+function dkeywalk(dataset, idx, func)
   local f = func or miner.count
   local rt = {}
 
-  for _,line in ipairs(data) do
-    table.insert(rt, line[key])
+  for _,line in dataset:lines() do
+    rt[#rt+1] = rawget(line, idx)
   end
 
   return f(rt)
@@ -732,21 +724,6 @@ function dgroupaddkey(dataset, key, func)
 	table.insert(dataset.keys, key)
 end
 
-function dkeys(data)
-  local keys = {}
-  local ret = {}
-  for _, line in ipairs(data) do
-    for k,_ in pairs(line) do
-      keys[k] = true
-    end
-  end
-  for k, _ in pairs(keys) do
-    table.insert(ret, k)
-  end
-  keys = nil
-  return ret 
-end
-
 -- OK
 function dsettimestamp(dataset, key, format)
   -- Set timestamp
@@ -765,60 +742,38 @@ function dsettimestamp(dataset, key, format)
   end
 end
 
-function dinterval(dataset, _begin, _end)
-	local rt = _newdataset('Interval')
-	local e,b = nil, nil
-	local r = _
-	if _begin then
-		b = _gettimestamp(_begin, dataset.timeformat)
-	end
-	if _end then
-		e = _gettimestamp(_end, dataset.timeformat)
-	end
-
-	return dataset:select(
-		function(line)
-			if e and b then
-				return line[TIMESTAMP] >= b and line[TIMESTAMP] <= e
-			elseif e then
-				return line[TIMESTAMP] <= e
-			elseif b then
-				return line[TIMESTAMP] >= b
-			else
-				return true 
-			end
-		end)
-end
-
-function dsort(data, param)
+-- OK 
+function dsort(dataset, param)
   if type(param) == 'function' then
-    table.sort(data, param)
+    table.sort(dataset.data, param)
   elseif type(param) == 'string' then
-    table.sort(data, function(a, b)
-      return a[param] and b[param] and miner.tonumber(a[param]) <
-        miner.tonumber(b[param])
+    local idx = dataset.keyidx[param]
+    table.sort(dataset.data, function(a, b)
+      return a[idx] and b[idx] and miner.tonumber(a[idx]) <
+        miner.tonumber(b[idx])
     end)
   end
 end
 
-function dtop(data, pkey, fkey, func)
+-- OK
+function dtop(dataset, pkey, pidx, fname, fidx, func)
   local rt = {}
   local f = func or module.count
-  local fname = string.format('f(%s)',fkey) 
 
   -- collecting
-  for _, line in ipairs(data) do
-    if rt[line[pkey]] then
-      table.insert(rt[line[pkey]], line[fkey])
+  for _, line in dataset:lines() do
+    local pval = line[pidx]
+    if rt[pval] then
+      table.insert(rt[pval], line[fidx])
     else
-      rt[line[pkey]] = {line[fkey]}
+      rt[pval] = {line[fidx]}
     end 
   end
 
   -- processing
-  local result = _newdataset('top')
+  local result = _newdataset('top', pkey, fname)
   for k,v in pairs(rt) do
-    result = result + {[pkey]=k, [fname]= f(v)}
+    result = result + {k, f(v)}
   end
 
   -- sorting
@@ -941,9 +896,9 @@ end
 function dselect(dataset, func)
 	local data = dataset.data
   local f = func or function(l) return true end 
-  local rt = _newdataset('select')
+  local rt = _newdataset('select', unpack(dataset.keylist))
 
-  for _,line in ipairs(data) do
+  for _,line in dataset:lines() do
     if f(line) then rt = rt + line end
   end
 	
