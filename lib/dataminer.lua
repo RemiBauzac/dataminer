@@ -150,6 +150,9 @@ local _dataset_meta = {
     return data[k]
 	end,
 	__add = function(t, l)
+    if #t.keylist ~= #l then
+      error('Error inserting line: bad size')
+    end
   	setmetatable(l, _line_meta)
   	table.insert(t.data, l)
     l[DATASET] = t
@@ -176,11 +179,16 @@ module.TIMESTAMP = TIMESTAMP
 module.GROUPSTAMP = GROUPSTAMP
 module.GROUPFUNCTION = GROUPFUNCTION
 
-function _newdataset(_name)
+function _newdataset(_name, ...)
   -- create initial tables
   local dataset = {}
   setmetatable(dataset, _dataset_meta)
   dataset.data = {}
+  dataset.keylist = {...}
+  dataset.keyidx = {}
+  for idx, k in ipairs(dataset.keylist) do
+    dataset.keyidx[k] = idx
+  end
   dataset.docs = setmetatable({}, {__mode = "kv"})
   dataset.shortdocs = setmetatable({}, {__mode = "kv"})
 	dataset._name = _name
@@ -210,6 +218,7 @@ function _newdataset(_name)
   - f(function or string, optional): the function f which need help.
       If nil, print all the function's help]](dataset.help)
 
+  -- OK
 	function dataset:name(name)
     _mandatory(name, 'n', 'string')
 		self._name = name
@@ -218,9 +227,11 @@ function _newdataset(_name)
 	dataset:doc[[name(n) - set the name of dataset
 	- n(string, mandatory): name of the dataset]](dataset.name)
 
+  -- OK
   function dataset:first() return self.data[1] end
   dataset:doc[[first() - return the data set first line]](dataset.first)
 
+  -- OK 
   function dataset:last() return self.data[#self.data] end
   dataset:doc[[last() - return the data set last line]](dataset.last)
 
@@ -239,17 +250,6 @@ function _newdataset(_name)
   - f(function, optional): function to compute key, with the current line as parameter.
       If nil, empty string is set for the key on all lines]](dataset.addkey)
 
-  function dataset:groupaddkey(key, func)
-    _mandatory(key, 'k', 'string')
-    _optional(func, 'f', 'function')
-    dgroupaddkey(self, key, func)
-    return self
-  end
-  dataset:doc[[groupaddkey(k, f) - add a key named 'k' on each group and return the group data set
-  - k(string, mandatory): name of the key to add
-  - f(function, optional): function to compute key, with the current group lines as parameter.
-      If nil, empty string is set for the key on all lines]](dataset.groupaddkey)
-
   -- OK
   function dataset:delkey(key)
     _mandatory(key, 'k', 'string')
@@ -262,25 +262,28 @@ function _newdataset(_name)
   dataset:doc[[delkey(k) - delete the key named 'k' on each line and return the data set
   - k(string, mandatory): name of the key to delete]](dataset.delkey)
 
-  function dataset:distinct(key)
+  -- OK
+  function dataset:distinctcount(key)
     _mandatory(key, 'k', 'string')
-    return ddistinct(self.data, key)
+    return ddistinct(self, key, self.keyidx[key])
   end
   dataset:doc[[distinct(k) - return a new dataset with all key 'k' distinct values and count
-  - k(string, mandatory): name of the key distinct values and count]](dataset.distinct)
+  - k(string, mandatory): name of the key distinct values and count]](dataset.distinctcount)
 
+  -- OK
   function dataset:distinctvalues(key)
     _mandatory(key, 'k', 'string')
-    return ddistinctvalues(self.data, key)
+    return ddistinctvalues(self, self.keyidx[key])
   end
   dataset:doc[[distinctvalues(k) - return a list with all key 'k' distinct values
   - k(string, mandatory): name of the key distinct values]](dataset.distinctvalues)
 
+  -- OK
   function dataset:replace(key, value, replace)
     _mandatory(key, 'k', 'string')
     _mandatory(value, 'v', 'all')
     _mandatory(replace, 'r', 'all')
-    dreplace(self.data, key, value, replace)
+    dreplace(self, self.keyidx[key], value, replace)
     return self
   end
   dataset:doc[[replace(k, v, r) - replace the value 'v' of the key 'k' by the new value 'r' on all data set lines and return the data set
@@ -597,18 +600,14 @@ end
 function _newcsv(filename, awsep)
   local lines = {}
   local sep = awsep or ';'
-  local result = _newdataset('csvFile')
+  local result
   keys = {}
   -- Put file lines in a table
   local lnum = 0
   for line in io.lines(filename) do
     local lt = ParseCSVLine(line, sep)
     if lnum == 0 then
-      result.keylist = lt
-      result.keyidx = {}
-      for idx, key in ipairs(lt) do
-        result.keyidx[key] = idx
-      end
+      result = _newdataset('csvFile', unpack(lt))
     else
       result = result + lt 
     end
@@ -640,39 +639,42 @@ function ddelkey(dataset, idx)
   collectgarbage("collect")
 end
 
-function ddistinct(data, key)
+-- OK
+function ddistinct(dataset, key, idx)
   local rt = {}
-
-  for _,line in ipairs(data) do
-    if rt[line[key]] then
-      rt[line[key]] = rt[line[key]] + 1
-    else rt[line[key]] = 1 end
+  for _,line in dataset:lines() do
+    local value = rawget(line, idx)
+    if rt[value] then
+      rt[value] = rt[value] + 1
+    else rt[value] = 1 end
   end
 
-  local result = _newdataset('distinctCount')
+  local result = _newdataset('distinctCount', key, 'count')
   for k, v in pairs(rt) do
-    result = result + {[key]= k, ['count']=v}
+    result = result + {k, v}
   end
   return result
 end
 
-function ddistinctvalues(data, key)
+function ddistinctvalues(dataset, idx)
   local rt = {}
   local result = {}
 
-  for _,line in ipairs(data) do
-    if line[key] and not rt[line[key]] then
-      table.insert(result, line[key])
-      rt[line[key]] = 1
+  for _,line in dataset:lines() do
+    local value = rawget(line, idx)
+    if value and not rt[value] then
+      result[#result+1] = value
+      rt[value] = true 
     end
   end
   return result
 end
 
-function dreplace(data, key, value, replace)
-  for _,line in ipairs(data) do
-    if line[key] == value then
-      line[key] = replace
+-- OK
+function dreplace(dataset, idx, value, replace)
+  for _,line in dataset:lines() do
+    if rawget(line, idx) == value then
+      rawset(line, idx, replace)
     end
   end
 end
